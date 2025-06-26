@@ -1,0 +1,26 @@
+# Python environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+
+# Environment and secrets
+.env
+.env.*
+
+# Editor folders
+.vscode
+.idea
+
+# Git
+.git
+.gitignore
+
+# System files
+.DS_Store
+Thumbs.db
