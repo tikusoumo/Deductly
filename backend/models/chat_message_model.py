@@ -1,10 +1,12 @@
 # ─── Pydantic Models for Request/Response Validation ──────────────────────────
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
+
 class UserCreate(BaseModel):
     username: str
+    email: EmailStr
     password: str
 
 class UserLogin(BaseModel):
