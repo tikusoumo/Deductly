@@ -12,7 +12,7 @@ from langchain_qdrant import Qdrant
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 # --- IMPORT TAX CALCULATOR ---
-from tax_deductions import TaxCalculator # Relative import
+from .tax_deductions import TaxCalculator # Relative import
 
 # ─── INITIAL SETUP ────────────────────────────────────────────────────────────
 # Explicitly define the path to the .env file within the rag_pipeline directory
