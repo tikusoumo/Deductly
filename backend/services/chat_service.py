@@ -63,10 +63,55 @@ class ChatService:
         # Return the Pydantic model by unpacking the prepared dictionary
         return ChatSessionResponse(**session_data)
 
+    # async def start_new_tax_session(self, input_data: InitialTaxDetailsInput, user_id: str) -> StartSessionResponse:
+    #     """
+    #     Starts a new tax deduction chat session.
+    #     Invokes LangGraph for initial analysis and generates an initial bot response.
+    #     """
+    #     sessions_collection = db_service.get_session_collection()
+    #     user_id_obj = ObjectId(user_id)
+
+    #     print("Invoking LangGraph for initial tax analysis...")
+    #     initial_state = {"user_details": input_data.user_details}
+    #     final_result_graph = await graph.ainvoke(initial_state)
+    #     verdict_text = final_result_graph.get("verdict", "No detailed tax verdict could be generated.")
+
+    #     print("Generating initial chatbot response from verdict...")
+    #     initial_prompt_for_llm = f"Please summarize the following tax deduction verdict in a friendly, conversational tone, highlighting key deductions and missing info: \n\n{verdict_text}"
+        
+    #     initial_bot_response_message = (await conversation_chain.ainvoke(
+    #         {"chat_history": [], "user_input": initial_prompt_for_llm}
+    #     )).content
+
+    #     chat_history = [
+    #         ChatMessage(role="assistant", content=initial_bot_response_message)
+    #     ]
+
+    #     current_time = datetime.now()
+    #     session_title = f"Tax Chat {current_time.strftime('%Y-%m-%d %H:%M')}"
+        
+    #     new_session = {
+    #         "user_id": user_id_obj,
+    #         "title": session_title,
+    #         "created_at": current_time,
+    #         "updated_at": current_time,
+    #         "chat_history": [msg.model_dump() for msg in chat_history], # Store dicts in DB
+    #         "initial_tax_details": input_data.user_details
+    #     }
+    #     inserted_session = await sessions_collection.insert_one(new_session)
+    #     session_id = str(inserted_session.inserted_id)
+
+    #     print(f"New session created with ID: {session_id}")
+    #     return StartSessionResponse(
+    #         message="New tax session started",
+    #         session_id=session_id,
+    #         initial_bot_response=initial_bot_response_message,
+    #         chat_history=chat_history
+    #     )
     async def start_new_tax_session(self, input_data: InitialTaxDetailsInput, user_id: str) -> StartSessionResponse:
         """
         Starts a new tax deduction chat session.
-        Invokes LangGraph for initial analysis and generates an initial bot response.
+        Invokes LangGraph for initial analysis and uses the raw verdict as the assistant's message.
         """
         sessions_collection = db_service.get_session_collection()
         user_id_obj = ObjectId(user_id)
@@ -76,12 +121,9 @@ class ChatService:
         final_result_graph = await graph.ainvoke(initial_state)
         verdict_text = final_result_graph.get("verdict", "No detailed tax verdict could be generated.")
 
-        print("Generating initial chatbot response from verdict...")
-        initial_prompt_for_llm = f"Please summarize the following tax deduction verdict in a friendly, conversational tone, highlighting key deductions and missing info: \n\n{verdict_text}"
-        
-        initial_bot_response_message = (await conversation_chain.ainvoke(
-            {"chat_history": [], "user_input": initial_prompt_for_llm}
-        )).content
+        # Use raw verdict as assistant's initial message
+        print("Using LangGraph's verdict as assistant response (no LLM summarization)...")
+        initial_bot_response_message = verdict_text
 
         chat_history = [
             ChatMessage(role="assistant", content=initial_bot_response_message)
@@ -89,19 +131,21 @@ class ChatService:
 
         current_time = datetime.now()
         session_title = f"Tax Chat {current_time.strftime('%Y-%m-%d %H:%M')}"
-        
+
         new_session = {
             "user_id": user_id_obj,
             "title": session_title,
             "created_at": current_time,
             "updated_at": current_time,
-            "chat_history": [msg.model_dump() for msg in chat_history], # Store dicts in DB
+            "chat_history": [msg.model_dump() for msg in chat_history],  # Store chat messages as dicts
             "initial_tax_details": input_data.user_details
         }
+
         inserted_session = await sessions_collection.insert_one(new_session)
         session_id = str(inserted_session.inserted_id)
 
         print(f"New session created with ID: {session_id}")
+
         return StartSessionResponse(
             message="New tax session started",
             session_id=session_id,
@@ -109,53 +153,54 @@ class ChatService:
             chat_history=chat_history
         )
 
+
     async def send_message_to_chat(self, session_id: str, input_data: ChatMessageInput, user_id: str) -> SendMessageResponse:
-        """Sends a new message to an existing chat session and gets an LLM response."""
-        sessions_collection = db_service.get_session_collection()
+            """Sends a new message to an existing chat session and gets an LLM response."""
+            sessions_collection = db_service.get_session_collection()
 
-        session_obj_id = ObjectId(session_id)
-        user_id_obj = ObjectId(user_id)
+            session_obj_id = ObjectId(session_id)
+            user_id_obj = ObjectId(user_id)
 
-        session_doc = await sessions_collection.find_one({"_id": session_obj_id, "user_id": user_id_obj})
-        if not session_doc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found or unauthorized.")
-        
-        # Convert chat_history list of dicts to list of ChatMessage Pydantic models
-        chat_history_messages = [ChatMessage(**msg) for msg in session_doc.get("chat_history", [])]
-        
-        new_user_message = ChatMessage(role="user", content=input_data.message)
-        chat_history_messages.append(new_user_message)
+            session_doc = await sessions_collection.find_one({"_id": session_obj_id, "user_id": user_id_obj})
+            if not session_doc:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found or unauthorized.")
+            
+            # Convert chat_history list of dicts to list of ChatMessage Pydantic models
+            chat_history_messages = [ChatMessage(**msg) for msg in session_doc.get("chat_history", [])]
+            
+            new_user_message = ChatMessage(role="user", content=input_data.message)
+            chat_history_messages.append(new_user_message)
 
-        # Convert Pydantic ChatMessage objects to LangChain's HumanMessage/AIMessage format
-        lc_chat_history = []
-        for msg in chat_history_messages:
-            if msg.role == "user":
-                lc_chat_history.append(HumanMessage(content=msg.content))
-            elif msg.role == "assistant":
-                lc_chat_history.append(AIMessage(content=msg.content))
+            # Convert Pydantic ChatMessage objects to LangChain's HumanMessage/AIMessage format
+            lc_chat_history = []
+            for msg in chat_history_messages:
+                if msg.role == "user":
+                    lc_chat_history.append(HumanMessage(content=msg.content))
+                elif msg.role == "assistant":
+                    lc_chat_history.append(AIMessage(content=msg.content))
 
-        print(f"Generating chatbot response for session {session_id}...")
-        
-        bot_response_content = (await conversation_chain.ainvoke(
-            {"chat_history": lc_chat_history, "user_input": input_data.message}
-        )).content
+            print(f"Generating chatbot response for session {session_id}...")
+            
+            bot_response_content = (await conversation_chain.ainvoke(
+                {"chat_history": lc_chat_history, "user_input": input_data.message}
+            )).content
 
-        new_bot_message = ChatMessage(role="assistant", content=bot_response_content)
-        chat_history_messages.append(new_bot_message)
+            new_bot_message = ChatMessage(role="assistant", content=bot_response_content)
+            chat_history_messages.append(new_bot_message)
 
-        await sessions_collection.update_one(
-            {"_id": session_obj_id},
-            {"$set": {
-                "chat_history": [msg.model_dump() for msg in chat_history_messages],
-                "updated_at": datetime.now()
-            }}
-        )
+            await sessions_collection.update_one(
+                {"_id": session_obj_id},
+                {"$set": {
+                    "chat_history": [msg.model_dump() for msg in chat_history_messages],
+                    "updated_at": datetime.now()
+                }}
+            )
 
-        print(f"Session {session_id} updated with new message.")
-        return SendMessageResponse(
-            message="Message sent",
-            bot_response=bot_response_content,
-            updated_chat_history=chat_history_messages
-        )
+            print(f"Session {session_id} updated with new message.")
+            return SendMessageResponse(
+                message="Message sent",
+                bot_response=bot_response_content,
+                updated_chat_history=chat_history_messages
+            )
 
 chat_service = ChatService()
