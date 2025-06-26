@@ -358,3 +358,100 @@ class TaxCalculator:
             "summary": summary,
             "citations": citations,
         }
+    def calculate_gross_income(self) -> float:
+        """
+        Calculates the total gross income from various sources.
+        You might need to expand this based on all possible income types in your user_details.
+        """
+        salary = self.user_details.get("salary", 0)
+        other_income = self.user_details.get("other_income", {})
+        interest_from_savings = other_income.get("interest_from_savings", 0)
+        fixed_deposit_interest = other_income.get("fixed_deposit_interest", 0)
+        # Add any other income categories as needed, e.g., house_property_income, capital_gains, business_income
+        
+        gross_income = salary + interest_from_savings + fixed_deposit_interest
+        return gross_income
+
+    def calculate_tax_liability(self, taxable_income: float) -> float:
+        """
+        Calculates the tax liability based on the taxable income for FY 2024-25 (AY 2025-26).
+        This implementation covers both Old and New Tax Regimes, considering age for the Old Regime.
+        """
+        tax_regime = self.user_details.get("tax_regime", "old").lower() # Default to old if not specified
+        user_age = self.user_details.get("age_self", 0) # Assumes 'age_self' is available and an integer
+        
+        tax_due = 0.0
+
+        if tax_regime == "new":
+            # New Tax Regime Slabs for AY 2025-26 (effective from FY 2023-24)
+            # Standard deduction of Rs. 50,000 is implicitly handled before passing taxable_income here
+            # or should be handled by an initial reduction in gross income.
+            # Assuming taxable_income already has standard deduction applied if applicable
+            # The new regime also allows a standard deduction for salaried individuals if opted.
+            # However, for simplicity here, we assume standard deduction is already accounted for in taxable_income
+            # if the user opted for the new regime and is eligible.
+            
+            if taxable_income <= 300000:
+                tax_due = 0
+            elif taxable_income <= 600000:
+                tax_due = (taxable_income - 300000) * 0.05
+            elif taxable_income <= 900000:
+                tax_due = 15000 + (taxable_income - 600000) * 0.10
+            elif taxable_income <= 1200000:
+                tax_due = 45000 + (taxable_income - 900000) * 0.15
+            elif taxable_income <= 1500000:
+                tax_due = 90000 + (taxable_income - 1200000) * 0.20
+            else: # Above 15,00,000
+                tax_due = 150000 + (taxable_income - 1500000) * 0.30
+            
+            # Rebate under Section 87A for income up to ₹7 Lakhs (for new regime)
+            if taxable_income <= 700000:
+                tax_due = max(0, tax_due - 25000) # Rebate up to ₹25,000
+            
+        else: # Old Tax Regime Slabs for AY 2025-26
+            if user_age < 60: # Individuals below 60 years (Resident/Non-Resident)
+                if taxable_income <= 250000:
+                    tax_due = 0
+                elif taxable_income <= 500000:
+                    tax_due = (taxable_income - 250000) * 0.05
+                elif taxable_income <= 1000000:
+                    tax_due = 12500 + (taxable_income - 500000) * 0.20
+                else: # Above 10,00,000
+                    tax_due = 112500 + (taxable_income - 1000000) * 0.30
+                
+                # Rebate under Section 87A for income up to ₹5 Lakhs (for old regime)
+                if taxable_income <= 500000:
+                    tax_due = max(0, tax_due - 12500) # Rebate up to ₹12,500
+
+            elif 60 <= user_age < 80: # Senior Citizens (60 to less than 80 years)
+                if taxable_income <= 300000:
+                    tax_due = 0
+                elif taxable_income <= 500000:
+                    tax_due = (taxable_income - 300000) * 0.05
+                elif taxable_income <= 1000000:
+                    tax_due = 10000 + (taxable_income - 500000) * 0.20
+                else: # Above 10,00,000
+                    tax_due = 110000 + (taxable_income - 1000000) * 0.30
+                
+                # Rebate under Section 87A for income up to ₹5 Lakhs (for old regime)
+                if taxable_income <= 500000:
+                    tax_due = max(0, tax_due - 12500)
+
+            else: # Super Senior Citizens (80 years and above)
+                if taxable_income <= 500000:
+                    tax_due = 0
+                elif taxable_income <= 1000000:
+                    tax_due = (taxable_income - 500000) * 0.20
+                else: # Above 10,00,000
+                    tax_due = 100000 + (taxable_income - 1000000) * 0.30
+
+                # Section 87A rebate not applicable for Super Senior Citizens as their basic exemption is already ₹5 Lakhs.
+
+        # Add Health and Education Cess @ 4%
+        tax_due += tax_due * 0.04
+        
+        # Surcharge (if applicable) - Simplified: Not implemented here.
+        # Surcharge rates vary based on income levels (e.g., 10%, 15%, 25%, 37%).
+        # This would require an additional check for income exceeding specific thresholds (e.g., ₹50 Lakhs, ₹1 Crore).
+
+        return tax_due
