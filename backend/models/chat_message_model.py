@@ -18,12 +18,13 @@ class InitialTaxDetailsInput(BaseModel):
 
 class ChatMessageInput(BaseModel):
     message: str
+    is_interruption_response: bool = Field(False, description="Set to true if this message is a response to a human-in-the-loop interruption.")
 
 class ChatMessage(BaseModel):
     role: str
     content: str
     timestamp: datetime = Field(default_factory=datetime.now)
-
+    tool_call_id: Optional[str] = None
 class ChatSessionResponse(BaseModel):
     # Changed from Field(alias="_id") to just 'id'
     id: str 
@@ -45,12 +46,14 @@ class ChatSessionSummary(BaseModel):
 class StartSessionResponse(BaseModel):
     message: str
     session_id: str
-    initial_bot_response: str
+    bot_response: str
     chat_history: List[ChatMessage]
+    awaiting_human_input: bool
 
 class SendMessageResponse(BaseModel):
     message: str
     bot_response: str
     updated_chat_history: List[ChatMessage]
-    
+    awaiting_human_input: bool
+    session_id: Optional[str] = None 
 # ---------------------------------------------

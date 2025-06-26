@@ -58,7 +58,8 @@ async def start_new_tax_session_route(
 async def send_message_to_chat_route(
     session_id: str,
     input_data: ChatMessageInput,
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user_id),
+    awaiting_human_input: bool = False
 ):
     """Sends a new user message to an ongoing chat session and receives an AI response."""
     try:
