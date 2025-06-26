@@ -137,3 +137,56 @@ retrievers = {
     )
     for name in COLLECTIONS
 }
+
+def get_nested_field(data: dict, field_path: str):
+    """Helper to get a nested field using dot notation."""
+    parts = field_path.split('.')
+    current = data
+    for part in parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return None # Field not found at this level
+    return current
+
+def plan_node(state: TaxState) -> dict:
+    """Generate a list of applicable deductions based on user input."""
+    print("--- Executing Node: Plan ---")
+    user_details = state["user_details"]
+    response = plan_chain.invoke({"user_details": json.dumps(user_details)})
+    return {"deduction_plan": response}
+
+def filter_node(state: TaxState) -> dict:
+    """Check which deductions the user is eligible for based on available data."""
+    print("--- Executing Node: Filter ---")
+    user_details = state["user_details"]
+    deduction_plan = state["deduction_plan"]
+    eligible = {}
+    for k, v in deduction_plan.items():
+        all_fields_present = True
+        for field in v.get("required_fields", []):
+            if get_nested_field(user_details, field) is None:
+                all_fields_present = False
+                break
+        
+        if all_fields_present:
+            eligible[k] = v
+    return {"eligible_deductions": eligible}
+
+
+def clarify_node(state: TaxState) -> dict:
+    """Detect missing fields by checking the original plan."""
+    print("--- Executing Node: Clarify ---")
+    user_details = state["user_details"]
+    deduction_plan = state["deduction_plan"]
+    missing = {}
+    for name, info in deduction_plan.items():
+        missing_fields = []
+        for field in info.get("required_fields", []):
+            if get_nested_field(user_details, field) is None:
+                missing_fields.append(field)
+        
+        if missing_fields:
+            missing[name] = missing_fields
+    return {"missing_data_questions": missing}
+
