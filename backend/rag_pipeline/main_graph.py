@@ -190,3 +190,183 @@ def clarify_node(state: TaxState) -> dict:
             missing[name] = missing_fields
     return {"missing_data_questions": missing}
 
+
+async def analyze_query_node(state: TaxState) -> dict:
+    """Analyzes each deduction query to extract structured search parameters."""
+    print("--- Executing Node: Analyze Query ---")
+    deduction_plan = state["deduction_plan"]
+    analyzed_queries = {}
+    
+    analysis_tasks = []
+    deduction_names = []
+
+    for name, info in deduction_plan.items():
+        query = info.get("query")
+        if query:
+            analysis_tasks.append(query_analyzer_chain.ainvoke({"query": query}))
+            deduction_names.append(name)
+        else:
+            analyzed_queries[name] = {"sections": [], "rules": []}
+
+    results_from_analysis = await asyncio.gather(*analysis_tasks)
+
+    for i, name in enumerate(deduction_names):
+        analyzed_queries[name] = results_from_analysis[i]
+            
+    return {"analyzed_query": analyzed_queries}
+
+async def rag_node(state: TaxState) -> dict:
+    """
+    Performs a multi-stage, metadata-filtered retrieval for each deduction asynchronously.
+    """
+    print("--- Executing Node: RAG (Filtered Retrieval) ---")
+    deduction_plan = state["deduction_plan"]
+    analyzed_queries = state["analyzed_query"]
+    rag_results = {}
+
+    all_deduction_rag_tasks = []
+    deduction_names_for_tasks = []
+
+    for name, info in deduction_plan.items():
+        original_query = info.get("query")
+        if not original_query:
+            rag_results[name] = []
+            continue
+
+        analysis = analyzed_queries.get(name, {"sections": [], "rules": []})
+        sections = analysis.get("sections", [])
+        rules = analysis.get("rules", [])
+
+        current_deduction_tasks = []
+        
+        # Tier 1: Primary Sources (Laws and Rules) with strict filtering
+        primary_filter = Filter(
+            should=[
+                FieldCondition(key="metadata.section", match=MatchValue(value=s)) for s in sections
+            ] + [
+                FieldCondition(key="metadata.rule", match=MatchValue(value=r)) for r in rules
+            ]
+        )
+
+        if sections or rules:
+            # CORRECTED: Changed 'query_filter=' to 'filter='
+            current_deduction_tasks.append(retrievers["tax_law_chunks"].asimilarity_search_with_score(query=original_query, k=3, filter=primary_filter))
+            current_deduction_tasks.append(retrievers["tax_rules_chunks"].asimilarity_search_with_score(query=original_query, k=3, filter=primary_filter))
+            
+        # Always do a broad semantic search as a fallback or for general queries (async)
+        current_deduction_tasks.append(retrievers["tax_law_chunks"].asimilarity_search_with_score(query=original_query, k=2))
+        current_deduction_tasks.append(retrievers["tax_rules_chunks"].asimilarity_search_with_score(query=original_query, k=2))
+
+        # Tier 2 & 3: Supporting Documents (Notifications, Cases) (async)
+        if sections: # Only apply section filter if sections are identified
+            case_filter = Filter(
+                should=[FieldCondition(key="metadata.section", match=MatchValue(value=s)) for s in sections]
+            )
+            # CORRECTED: Changed 'query_filter=' to 'filter='
+            current_deduction_tasks.append(retrievers["capital_gain_cases"].asimilarity_search_with_score(query=original_query, k=2, filter=case_filter))
+            current_deduction_tasks.append(retrievers["cbdt_notifications"].asimilarity_search_with_score(query=original_query, k=2, filter=case_filter))
+        else: # If no sections, do a broad search on supporting documents
+              current_deduction_tasks.append(retrievers["capital_gain_cases"].asimilarity_search_with_score(query=original_query, k=2))
+              current_deduction_tasks.append(retrievers["cbdt_notifications"].asimilarity_search_with_score(query=original_query, k=2))
+
+        all_deduction_rag_tasks.append(asyncio.gather(*current_deduction_tasks))
+        deduction_names_for_tasks.append(name)
+
+    # Execute all tasks for all deductions in parallel
+    results_for_all_deductions = await asyncio.gather(*all_deduction_rag_tasks)
+
+    for i, name in enumerate(deduction_names_for_tasks):
+        all_retrieved_chunks_for_deduction = {}
+        for hits_list in results_for_all_deductions[i]:
+            for chunk, score in hits_list:
+                all_retrieved_chunks_for_deduction[chunk.page_content] = chunk # Deduplicate by content
+        
+        rag_results[name] = [chunk.page_content for chunk in all_retrieved_chunks_for_deduction.values()]
+
+    return {"rag_results": rag_results}
+
+
+def reason_node(state: TaxState) -> dict:
+    """
+    Reason whether the deduction applies, using specific calculation functions
+    from TaxCalculator if available, otherwise falling back to LLM reasoning.
+    Includes all planned deductions, marking those with missing data as N/A.
+    """
+    print("--- Executing Node: Reason ---")
+    user_details = state["user_details"]
+    deduction_plan = state["deduction_plan"]
+    rag_results = state["rag_results"]
+    reasoning = {}
+
+    # Instantiate your TaxCalculator with the user's details
+    calculator = TaxCalculator(user_details)
+
+    for name, plan_info in deduction_plan.items():
+        result = {}
+        
+        # Check if all required fields are present for this specific deduction
+        all_fields_present = True
+        for field in plan_info.get("required_fields", []):
+            if get_nested_field(user_details, field) is None:
+                all_fields_present = False
+                break
+
+        if not all_fields_present:
+            # If data is missing, mark as N/A and provide specific questions
+            missing_fields_list = state["missing_data_questions"].get(name, [])
+            
+            result = {
+                "amount": "N/A",
+                "summary": f"Data missing for this deduction. Please provide: {', '.join(missing_fields_list) if missing_fields_list else 'required information'}.",
+                "citations": [plan_info.get("eligibility_criteria", "N/A")]
+            }
+            reasoning[name] = result
+            continue
+
+        # --- Dispatch to specific calculation functions if all data is present ---
+        if name == "standard_deduction":
+            tax_regime_choice = user_details.get("tax_regime", "old")
+            result = calculator.calculate_standard_deduction(tax_regime=tax_regime_choice)
+        elif name == "section_80C_deduction":
+            result = calculator.calculate_section_80C_deduction()
+        elif name == "section_80D_deduction":
+            result = calculator.calculate_section_80D_deduction()
+        elif name == "section_24B_deduction":
+            result = calculator.calculate_section_24B_deduction()
+        elif name == "section_80G_deduction":
+            result = calculator.calculate_section_80G_deduction()
+        elif name == "section_80CCD1B_deduction":
+            result = calculator.calculate_section_80CCD1B_deduction()
+        elif name == "section_80E_deduction":
+            result = calculator.calculate_section_80E_deduction()
+        elif name == "section_80DD_deduction":
+            result = calculator.calculate_section_80DD_deduction()
+        elif name == "section_80TTA_deduction":
+            result = calculator.calculate_section_80TTA_deduction()
+        elif name == "section_80TTB_deduction":
+            result = calculator.calculate_section_80TTB_deduction()
+        else:
+            # Fallback to LLM for non-calculator deductions or complex cases
+            print(f"LLM reasoning for: {name} (no specific function or for augmentation)")
+            contexts = "\n----\n".join(rag_results.get(name, []))
+            resp = reason_chain.invoke(
+                {
+                    "deduction": name,
+                    "user_facts": json.dumps(user_details),
+                    "contexts": contexts,
+                }
+            )
+            if isinstance(resp, str):
+                try:
+                    result = json.loads(resp)
+                except json.JSONDecodeError:
+                    result = {"amount": "Error", "summary": f"Could not parse LLM response for {name}: {resp}", "citations": []}
+            else:
+                result = resp
+
+        if result:
+            reasoning[name] = result
+        else:
+            reasoning[name] = {"amount": "N/A", "summary": "Could not determine deduction.", "citations": []}
+
+    return {"reasoning": reasoning}
