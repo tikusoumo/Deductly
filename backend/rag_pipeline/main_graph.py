@@ -1,0 +1,139 @@
+import os
+import json
+from typing import Any, Dict, List, TypedDict
+import asyncio
+
+from dotenv import load_dotenv
+from langgraph.graph import StateGraph, END
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, GoogleGenerativeAI
+from langchain_qdrant import Qdrant
+from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+# --- IMPORT TAX CALCULATOR ---
+from .tax_deductions import TaxCalculator # Relative import
+
+# ─── INITIAL SETUP ────────────────────────────────────────────────────────────
+# Explicitly define the path to the .env file within the rag_pipeline directory
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DOTENV_PATH = os.path.join(BASE_DIR, '.env')
+# load_dotenv(dotenv_path=DOTENV_PATH, override=True)
+load_dotenv()
+
+# ─── CONFIGURATION ────────────────────────────────────────────────────────────
+# These variables should now be loaded correctly from .env
+QDRANT_URL = os.getenv("QDRANT_URL")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# Essential check after loading env vars
+if not GOOGLE_API_KEY:
+    raise ValueError("GOOGLE_API_KEY environment variable not set. Check your .env file.")
+if not QDRANT_URL:
+    raise ValueError("QDRANT_URL environment variable not set. Check your .env file.")
+if not QDRANT_API_KEY:
+    raise ValueError("QDRANT_API_KEY environment variable not set. Check your .env file.")
+
+os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY # Ensure it's in os.environ for some langchain modules
+os.environ["QDRANT_API_KEY"] = QDRANT_API_KEY # Ensure it's in os.environ for qdrant-client
+
+EMBEDDING_MODEL = "models/text-embedding-004"
+LLM_MODEL = "gemini-2.0-flash"
+llm = GoogleGenerativeAI(model=LLM_MODEL) # This LLM instance is used by plan_chain and reason_chain
+
+COLLECTIONS = [
+    "tax_law_chunks",
+    "tax_rules_chunks",
+    "capital_gain_cases",
+    "cbdt_notifications",
+    "itr_forms",
+]
+
+# ─── STATE ────────────────────────────────────────────────────────────────────
+class TaxState(TypedDict, total=False):
+    user_details: dict
+    deduction_plan: dict
+    eligible_deductions: dict
+    missing_data_questions: dict
+    rag_results: dict
+    reasoning: dict
+    summary: str
+    legal_basis: str
+    verdict: str
+    analyzed_query: dict # New field to store analyzed queries
+
+# ─── SET UP LLM CHAINS (Modernized with LCEL) ─────────────────────────────────
+plan_prompt = PromptTemplate(
+    input_variables=["user_details"],
+    template="""
+You are a tax assistant. Given these user details (JSON):
+{user_details}
+
+Identify ALL potential tax deductions applicable under Indian Income Tax law for a salaried individual (FY 2024-25, AY 2025-26).
+For each potential deduction, return a JSON object where the key is the deduction name (use these exact keys: "standard_deduction", "section_80C_deduction", "section_80D_deduction", "section_24B_deduction", "section_80G_deduction", "section_80CCD1B_deduction", "section_80E_deduction", "section_80DD_deduction", "section_80TTA_deduction", "section_80TTB_deduction").
+For each deduction, the value should be an object with:
+- eligibility_criteria: a short description of the general eligibility.
+- required_fields: a list of specific fields from user_details (e.g., 'salary', 'health_insurance_premium', 'donation_amount', 'housing_loan_interest', 'investments.80C_investments', 'investments.nps_contribution', 'education_loan_interest', 'disability_details.is_disabled', 'disability_details.type', 'other_income.interest_from_savings', 'age_self', 'age_parents', 'property_status') that are crucial for determining eligibility and calculating the amount. Use dot notation for nested fields.
+- query: a short free-text query to fetch relevant legal context for that specific deduction.
+
+Be comprehensive and list all basic deductions, even if the user_details currently lack the required fields.
+For example, if user_details does not contain 'investments.nps_contribution', you should still include "section_80CCD1B_deduction" but specify 'investments.nps_contribution' as a 'required_field'.
+
+Respond with ONLY the JSON object.
+""".strip(),
+)
+plan_chain = plan_prompt | llm | JsonOutputParser()
+
+# New: Query Analyzer Chain
+query_analyzer_prompt = PromptTemplate(
+    input_variables=["query"],
+    template="""
+Analyze the following tax deduction query and extract any explicit Indian Income Tax sections (e.g., "80C", "24B") or rules (e.g., "Rule 11DD").
+Return the output as a JSON object with two keys: "sections" (list of strings) and "rules" (list of strings).
+If no specific section or rule is mentioned, return empty lists.
+
+Query: {query}
+
+Example Output:
+{{
+    "sections": ["80C", "80D"],
+    "rules": ["Rule 11DD"]
+}}
+""".strip(),
+)
+query_analyzer_chain = query_analyzer_prompt | llm | JsonOutputParser()
+
+reason_prompt = PromptTemplate(
+    input_variables=["user_facts", "deduction", "contexts"],
+    template="""
+You are a tax reasoning assistant.
+Deduction: {deduction}
+User facts (JSON): {user_facts}
+Legal contexts (separated by ----):
+{contexts}
+
+If a specific Python function in `TaxCalculator` for this deduction is available and already calculates the amount, just confirm that the calculation is handled externally.
+Otherwise, use the provided legal contexts and user facts to produce a JSON with:
+- amount: computed deductible amount or range as a string (e.g., "Up to ₹1,50,000")
+- summary: concise explanation of why, referencing the legal context if used.
+- citations: list of section/rule/case IDs used.
+
+Respond with ONLY the JSON object.
+""".strip(),
+)
+reason_chain = reason_prompt | llm | JsonOutputParser()
+
+# ─── BUILD MULTI-COLLECTION RETRIEVER (Async Version) ──────────────────────────
+embedder = GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
+
+# Initialize Qdrant clients with async capability
+retrievers = {
+    name: Qdrant.from_existing_collection(
+        url=QDRANT_URL,
+        api_key=QDRANT_API_KEY,
+        collection_name=name,
+        embedding=embedder,
+    )
+    for name in COLLECTIONS
+}
