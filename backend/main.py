@@ -4,7 +4,12 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
+from services.chat_service import chat_service
+from rag_pipeline.main_graph import create_tax_graph
+from services.chat_service import ChatService, chat_service
 
+app = FastAPI()
+    #    ChatService.graph_with_mongo = create_tax_graph()
 # ─── Import Routers ─────────────────────────────────────────────
 from routes.tax_routes import router as tax_router
 from controllers import auth_controller, chat_controller
@@ -15,7 +20,7 @@ from services.database_service import db_service
 
 # ─── Optional: LangGraph check ─────────────────────────────────
 try:
-    from rag_pipeline.main_graph import graph
+    from rag_pipeline.main_graph import create_tax_graph
     print("LangGraph 'graph' imported successfully.")
 except ImportError as e:
     print(f"Error importing LangGraph: {e}")
@@ -50,6 +55,7 @@ app.add_middleware(
 # ─── Startup & Shutdown Events ─────────────────────────────────
 @app.on_event("startup")
 async def startup_event():
+    await chat_service.initialize()
     await db_service.connect()
 
 @app.on_event("shutdown")
