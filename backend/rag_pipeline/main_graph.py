@@ -413,3 +413,69 @@ def verdict_node(state: TaxState) -> dict:
         ]
     )
     return {"verdict": verdict}
+
+# ─── GRAPH DEFINITION ────────────────────────────────────────────────────────
+graph_builder = StateGraph(TaxState)
+
+# Add all the functions as standard nodes
+graph_builder.add_node("plan_node", plan_node)
+graph_builder.add_node("filter_node", filter_node)
+graph_builder.add_node("clarify_node", clarify_node)
+graph_builder.add_node("analyze_query_node", analyze_query_node) # New node
+graph_builder.add_node("rag_node", rag_node)
+graph_builder.add_node("reason_node", reason_node)
+graph_builder.add_node("summary_node", summary_node)
+graph_builder.add_node("legal_node", legal_node)
+graph_builder.add_node("verdict_node", verdict_node)
+
+# Set the entry point and define the graph's sequential flow
+graph_builder.set_entry_point("plan_node")
+graph_builder.add_edge("plan_node", "filter_node") 
+graph_builder.add_edge("filter_node", "clarify_node")
+graph_builder.add_edge("clarify_node", "analyze_query_node") # New edge
+graph_builder.add_edge("analyze_query_node", "rag_node") # Changed edge
+graph_builder.add_edge("rag_node", "reason_node")
+graph_builder.add_edge("reason_node", "summary_node")
+graph_builder.add_edge("summary_node", "legal_node")
+graph_builder.add_edge("legal_node", "verdict_node")
+graph_builder.add_edge("verdict_node", END)
+
+# Compile the graph
+graph = graph_builder.compile()
+
+# ─── DEMO RUN ──────────────────────────────────────────────────────────────────
+# This block is for direct testing of the graph, not for import by app.py
+# In app.py, graph is imported directly.
+if __name__ == "__main__":
+    initial_state = {
+        
+    "user_details": {
+        "salary": 1200000,
+        "user_age": 35,
+        "is_senior_citizen": "false",
+        "health_insurance_premium": 25000,
+        "parents_age": 62,
+        "parents_health_insurance_premium": 40000,
+        "medical_expenses": 12000,
+        "donation_amount": 30000,
+        "housing_loan_interest": 180000,
+        "investments": {
+          "80C_investments": 140000,
+          "nps_contribution": 50000
+        },
+        "education_loan_interest": 40000,
+        "other_income": {
+          "interest_from_savings": 8000,
+          "fixed_deposit_interest": 20000
+        },
+        "property_status": "self_occupied"
+    }
+
+    }
+    
+    print("🚀 Invoking the tax graph...")
+    # Changed to ainvoke for consistency with FastAPI
+    final_result = asyncio.run(graph.ainvoke(initial_state))
+
+    print("\n\n✅ Final Verdict:\n")
+    print(final_result.get("verdict", "No verdict could be generated."))
