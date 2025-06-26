@@ -33,7 +33,10 @@ def scrape_blog_to_pdf(url, output_dir="data", filename=None):
         # Parse HTML using BeautifulSoup
         soup = BeautifulSoup(response.content, 'html5lib')
 
-      
+       # Remove unwanted elements
+        for selector in ['header', 'footer', 'nav', 'aside', 'script', 'style']:
+            for tag in soup.select(selector):
+                tag.decompose()
 
         # Extract blog title
         title = soup.title.string.strip() if soup.title else "Blog Article"
