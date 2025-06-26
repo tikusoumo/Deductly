@@ -3,10 +3,10 @@ import { User } from '@/types';
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name: string) => Promise<void>;
-  logout: () => void;
   loading: boolean;
+  login: (username: string, password: string) => Promise<void>;
+  signup: (username: string, email: string, password: string) => Promise<void>;
+  logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,79 +28,80 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored user session
+    const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+
+    if (storedToken && storedUser && storedUser !== 'undefined') {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (error) {
+        console.error("Failed to parse user from localStorage", error);
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+      }
     }
     setLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
-    try {
-      // Mock API call - replace with actual API
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!response.ok) throw new Error('Login failed');
-
-      const userData = await response.json();
-      setUser(userData.data);
-      localStorage.setItem('user', JSON.stringify(userData.data));
-    } catch (error) {
-      // Mock login for demo
-      const mockUser: User = {
-        id: '1',
-        email,
-        name: email.split('@')[0],
-        createdAt: new Date().toISOString(),
-      };
-      setUser(mockUser);
-      localStorage.setItem('user', JSON.stringify(mockUser));
+  const handleAuthResponse = (data: any) => {
+    if (!data.user_id || !data.username || !data.email) {
+      throw new Error("Invalid authentication response from server.");
     }
+    
+    const userData: User = {
+      id: data.user_id,
+      username: data.username,
+      email: data.email,
+    };
+
+    localStorage.setItem('user', JSON.stringify(userData));
+    // Assuming the backend will also return a token for subsequent authenticated requests
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+    }
+    setUser(userData);
   };
 
-  const signup = async (email: string, password: string, name: string) => {
-    try {
-      // Mock API call - replace with actual API
-      const response = await fetch('/api/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name }),
-      });
+  const login = async (username: string, password: string) => {
+    const response = await fetch('http://localhost:8000/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
 
-      if (!response.ok) throw new Error('Signup failed');
-
-      const userData = await response.json();
-      setUser(userData.data);
-      localStorage.setItem('user', JSON.stringify(userData.data));
-    } catch (error) {
-      // Mock signup for demo
-      const mockUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
-        email,
-        name,
-        createdAt: new Date().toISOString(),
-      };
-      setUser(mockUser);
-      localStorage.setItem('user', JSON.stringify(mockUser));
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.detail || 'Login failed');
     }
+    handleAuthResponse(data);
+  };
+
+  const signup = async (username: string, email: string, password: string) => {
+    const response = await fetch('http://localhost:8000/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.detail || 'Signup failed');
+    }
+    handleAuthResponse(data);
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
   };
 
   const value = {
     user,
+    loading,
     login,
     signup,
     logout,
-    loading,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

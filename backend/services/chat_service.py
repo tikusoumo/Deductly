@@ -113,9 +113,10 @@ class ChatService:
         Starts a new tax deduction chat session.
         Invokes LangGraph for initial analysis and uses the raw verdict as the assistant's message.
         """
+        print(input_data)
         sessions_collection = db_service.get_session_collection()
         user_id_obj = ObjectId(user_id)
-
+        print(f"Starting new tax session for user ID: {user_id}")
         print("Invoking LangGraph for initial tax analysis...")
         initial_state = {"user_details": input_data.user_details}
         final_result_graph = await graph.ainvoke(initial_state)

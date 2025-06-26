@@ -75,7 +75,9 @@ export interface TaxCalculationResult {
   taxable_income: number;
   estimated_savings: number;
   breakdown: {
+    standard_deduction?: number;
     section_80C: number;
+    section_80CCD1B?: number;
     section_80D: number;
     section_80G: number;
     section_80E: number;

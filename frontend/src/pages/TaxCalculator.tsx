@@ -1,84 +1,98 @@
 import React from 'react';
 import { TaxInformationForm } from '@/components/forms/TaxInformationForm';
 import { TaxFormData, TaxCalculationResult } from '@/types';
-import { useToast } from '@/hooks/use-toast';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertCircle } from 'lucide-react';
 
 export const TaxCalculator: React.FC = () => {
-  const { toast } = useToast();
+  const [error, setError] = React.useState<string | null>(null);
 
-  const handleTaxCalculation = async (data: TaxFormData): Promise<TaxCalculationResult> => {
+  const handleCalculateTax = async (data: TaxFormData): Promise<TaxCalculationResult> => {
+    setError(null);
     try {
-      // This would be your actual API call
-      const response = await fetch('/api/tax/calculate', {
+      // This assumes the API endpoint is '/api/tax/submit' and returns a structured JSON
+      // object containing the full results from the RAG pipeline.
+      const { id } = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user') || '{}') : { id: null };
+      const response = await fetch('http://localhost:8000/chats/start_new_tax_session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'user-id': id || '',
         },
         body: JSON.stringify(data),
       });
 
       if (!response.ok) {
-        throw new Error('Tax calculation failed');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'An error occurred during tax calculation.');
       }
 
-      const result = await response.json();
-      
-      toast({
-        title: "Tax calculation completed",
-        description: `Estimated savings: ₹${result.estimated_savings.toLocaleString()}`,
-      });
+      const responseData = await response.json();
+      const backendResult = responseData.data;
 
-      return result;
-    } catch (error) {
-      // Mock calculation for demo purposes
-      const mockResult: TaxCalculationResult = {
-        total_tax_liability: Math.max(0, (data.salary - 250000) * 0.2),
-        total_deductions: (data.investments['80C_investments'] || 0) + 
-                         (data.investments.nps_contribution || 0) + 
-                         (data.health_insurance_premium || 0) + 
-                         (data.parents_health_insurance_premium || 0) +
-                         (data.housing_loan_interest || 0) +
-                         (data.education_loan_interest || 0) +
-                         (data.donation_amount || 0),
-        taxable_income: Math.max(0, data.salary - 250000 - 
-                        ((data.investments['80C_investments'] || 0) + 
-                         (data.investments.nps_contribution || 0) + 
-                         (data.health_insurance_premium || 0) + 
-                         (data.parents_health_insurance_premium || 0))),
-        estimated_savings: Math.floor(Math.random() * 50000) + 10000,
-        breakdown: {
-          section_80C: Math.min(data.investments['80C_investments'] || 0, 150000),
-          section_80D: (data.health_insurance_premium || 0) + (data.parents_health_insurance_premium || 0),
-          section_80G: data.donation_amount || 0,
-          section_80E: data.education_loan_interest || 0,
-          section_24: data.housing_loan_interest || 0,
-          section_80DD: data.disability_details.is_disabled ? 
-            (data.disability_details.type === 'severe_disability' ? 125000 : 75000) : 0,
-          section_80TTA: data.is_senior_citizen ? 0 : Math.min(data.other_income.interest_from_savings || 0, 10000),
-          section_80TTB: data.is_senior_citizen ? 
-            Math.min((data.other_income.interest_from_savings || 0) + (data.other_income.fixed_deposit_interest || 0), 50000) : 0
-        }
+      // Transforms the backend response into the TaxCalculationResult type expected by the form.
+      const parseAmount = (amountStr: string | number | undefined): number => {
+        if (typeof amountStr === 'number') return amountStr;
+        if (typeof amountStr !== 'string' || amountStr === 'N/A') return 0;
+        const numbers = amountStr.replace(/[^0-9.]/g, '');
+        return numbers ? parseFloat(numbers) : 0;
       };
 
-      toast({
-        title: "Tax calculation completed",
-        description: `Estimated savings: ₹${mockResult.estimated_savings.toLocaleString()}`,
-      });
+      const reasoning = backendResult.reasoning || {};
+      const breakdown: TaxCalculationResult['breakdown'] = {
+        standard_deduction: parseAmount(reasoning.standard_deduction?.amount),
+        section_80C: parseAmount(reasoning.section_80C_deduction?.amount),
+        section_80CCD1B: parseAmount(reasoning.section_80CCD1B_deduction?.amount),
+        section_80D: parseAmount(reasoning.section_80D_deduction?.amount),
+        section_80G: parseAmount(reasoning.section_80G_deduction?.amount),
+        section_80E: parseAmount(reasoning.section_80E_deduction?.amount),
+        section_24: parseAmount(reasoning.section_24B_deduction?.amount),
+        section_80DD: parseAmount(reasoning.section_80DD_deduction?.amount),
+        section_80TTA: parseAmount(reasoning.section_80TTA_deduction?.amount),
+        section_80TTB: parseAmount(reasoning.section_80TTB_deduction?.amount),
+      };
 
-      return mockResult;
+      // Assumes the backend calculates and provides estimated_savings.
+      const estimatedSavings = backendResult.estimated_savings || 0;
+
+      const resultForFrontend: TaxCalculationResult = {
+        total_tax_liability: backendResult.tax_liability || 0,
+        total_deductions: backendResult.total_deductions || 0,
+        taxable_income: backendResult.total_taxable_income || 0,
+        estimated_savings: estimatedSavings,
+        breakdown: breakdown,
+      };
+
+      return resultForFrontend;
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      setError(errorMessage);
+      throw new Error(errorMessage); // Re-throw for the form's internal error handling
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-gray-900">Tax Calculator</h1>
-        <p className="text-gray-600 mt-2">
-          Calculate your tax liability and discover potential savings opportunities
-        </p>
-      </div>
-
-      <TaxInformationForm onSubmit={handleTaxCalculation} />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">Tax Calculator</CardTitle>
+          <CardDescription>
+            Fill in your financial details to calculate your tax liability and discover potential savings.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Calculation Failed</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <TaxInformationForm onSubmit={handleCalculateTax} />
+        </CardContent>
+      </Card>
     </div>
   );
-};
+}

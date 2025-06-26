@@ -11,8 +11,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
+// Only allow username for login
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  username: z.string().min(3, 'Username is required'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
@@ -31,9 +32,9 @@ export const LoginForm: React.FC = () => {
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      await login(data.email, data.password);
+      await login(data.username, data.password);
       navigate('/dashboard');
     } catch (err) {
       setError('Login failed. Please check your credentials.');
@@ -45,9 +46,9 @@ export const LoginForm: React.FC = () => {
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold text-center">Sign In</CardTitle>
+        <CardTitle className="text-2xl font-bold text-center">Log In</CardTitle>
         <CardDescription className="text-center">
-          Enter your credentials to access your account
+          Enter your username and password to  login
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -58,18 +59,18 @@ export const LoginForm: React.FC = () => {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          
+
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="username">Username</Label>
             <Input
-              id="email"
-              type="email"
-              placeholder="john@example.com"
-              {...register('email')}
-              className={errors.email ? 'border-red-500' : ''}
+              id="username"
+              type="text"
+              placeholder="your_username"
+              {...register('username')}
+              className={errors.username ? 'border-red-500' : ''}
             />
-            {errors.email && (
-              <p className="text-sm text-red-500">{errors.email.message}</p>
+            {errors.username && (
+              <p className="text-sm text-red-500">{errors.username.message}</p>
             )}
           </div>
 
@@ -87,24 +88,20 @@ export const LoginForm: React.FC = () => {
             )}
           </div>
 
-          <Button 
-            type="submit" 
-            className="w-full" 
-            disabled={isLoading}
-          >
+          <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Signing in...
               </>
             ) : (
-              'Sign In'
+              'Login'
             )}
           </Button>
         </form>
 
         <div className="mt-4 text-center text-sm">
-          Don't have an account?{' '}
+          Don’t have an account?{' '}
           <Link to="/signup" className="text-blue-600 hover:underline">
             Sign up
           </Link>

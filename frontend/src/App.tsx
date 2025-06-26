@@ -8,7 +8,7 @@ import { TaxCalculator } from '@/pages/TaxCalculator';
 import { Chat } from '@/pages/Chat';
 import { Submissions } from '@/pages/Submissions';
 import { History } from '@/pages/History';
-import { Settings } from '@/pages/Settings';
+// import { Settings } from '@/pages/Settings';
 import { LoginForm } from '@/components/auth/LoginForm';
 import { SignupForm } from '@/components/auth/SignupForm';
 import { Toaster } from '@/components/ui/sonner';
@@ -122,7 +122,7 @@ function App() {
                 </ProtectedRoute>
               } 
             />
-            <Route 
+            {/* <Route 
               path="/settings" 
               element={
                 <ProtectedRoute>
@@ -131,7 +131,7 @@ function App() {
                   </Layout>
                 </ProtectedRoute>
               } 
-            />
+            /> */}
             
             {/* Catch all route */}
             <Route path="*" element={<Navigate to="/" />} />
