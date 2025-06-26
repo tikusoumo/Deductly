@@ -92,6 +92,7 @@ export const ChatSessions: React.FC<ChatSessionsProps> = ({ onSelectSession, sel
   };
 
   return (
+    <>
     <Card className="h-[calc(100vh-200px)]">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
@@ -142,5 +143,6 @@ export const ChatSessions: React.FC<ChatSessionsProps> = ({ onSelectSession, sel
         </ScrollArea>
       </CardContent>
     </Card>
+    </>
   );
 };

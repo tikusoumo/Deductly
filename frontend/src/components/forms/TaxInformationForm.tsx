@@ -22,17 +22,19 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle,
-  Loader2
+  Loader2,
+  MessageSquare
 } from 'lucide-react';
 import { TaxFormData, TaxCalculationResult } from '@/types';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Link } from 'react-router-dom';
 
 const taxFormSchema = z.object({
   salary: z.number().min(0, 'Salary must be positive'),
   user_age: z.number().min(18, 'Age must be at least 18').max(100, 'Age must be realistic'),
   is_senior_citizen: z.boolean(),
   investments: z.object({
-    '80C_investments': z.number().min(0).max(150000, 'Section 80C limit is ₹1,50,000'),
+    "80C_investments": z.number().min(0).max(150000, 'Section 80C limit is ₹1,50,000'),
     nps_contribution: z.number().min(0).max(50000, 'NPS additional limit is ₹50,000')
   }),
   health_insurance_premium: z.number().min(0),
@@ -536,11 +538,21 @@ export const TaxInformationForm: React.FC<TaxInformationFormProps> = ({
                 <div className="space-y-2">
                   {Object.entries(calculationResult.breakdown).map(([section, amount]) => (
                     <div key={section} className="flex justify-between items-center p-3 border rounded">
-                      <span className="font-medium">{section.replace('_', ' ').toUpperCase()}</span>
+                      <span className="font-medium">{section.replace(/_/g, ' ').replace('section', 'Section').toUpperCase()}</span>
                       <span className="text-green-600 font-medium">₹{amount.toLocaleString()}</span>
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="mt-6 text-center">
+                <p className="mb-2 text-gray-700">Have more questions or need further clarification?</p>
+                <Link to="/chat">
+                  <Button variant="outline">
+                    <MessageSquare className="mr-2 h-4 w-4" />
+                    Go to Chat
+                  </Button>
+                </Link>
               </div>
             </CardContent>
           </Card>

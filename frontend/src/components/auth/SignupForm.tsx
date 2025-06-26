@@ -12,13 +12,13 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const signupSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  username: z.string().min(3, 'Username must be at least 3 characters'),
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
-  path: ["confirmPassword"],
+  path: ['confirmPassword'],
 });
 
 type SignupFormData = z.infer<typeof signupSchema>;
@@ -36,9 +36,9 @@ export const SignupForm: React.FC = () => {
   const onSubmit = async (data: SignupFormData) => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      await signup(data.email, data.password, data.name);
+      await signup(data.username, data.email, data.password);
       navigate('/dashboard');
     } catch (err) {
       setError('Signup failed. Please try again.');
@@ -52,7 +52,7 @@ export const SignupForm: React.FC = () => {
       <CardHeader className="space-y-1">
         <CardTitle className="text-2xl font-bold text-center">Create Account</CardTitle>
         <CardDescription className="text-center">
-          Enter your information to create a new account
+          Enter your details to register
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -63,18 +63,18 @@ export const SignupForm: React.FC = () => {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          
+
           <div className="space-y-2">
-            <Label htmlFor="name">Full Name</Label>
+            <Label htmlFor="username">Username</Label>
             <Input
-              id="name"
+              id="username"
               type="text"
-              placeholder="John Doe"
-              {...register('name')}
-              className={errors.name ? 'border-red-500' : ''}
+              placeholder="your_username"
+              {...register('username')}
+              className={errors.username ? 'border-red-500' : ''}
             />
-            {errors.name && (
-              <p className="text-sm text-red-500">{errors.name.message}</p>
+            {errors.username && (
+              <p className="text-sm text-red-500">{errors.username.message}</p>
             )}
           </div>
 
@@ -83,7 +83,7 @@ export const SignupForm: React.FC = () => {
             <Input
               id="email"
               type="email"
-              placeholder="john@example.com"
+              placeholder="you@example.com"
               {...register('email')}
               className={errors.email ? 'border-red-500' : ''}
             />
@@ -120,11 +120,7 @@ export const SignupForm: React.FC = () => {
             )}
           </div>
 
-          <Button 
-            type="submit" 
-            className="w-full" 
-            disabled={isLoading}
-          >
+          <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

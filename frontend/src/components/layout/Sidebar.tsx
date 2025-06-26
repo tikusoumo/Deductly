@@ -3,10 +3,8 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   MessageCircle, 
-  FileText, 
   Home, 
   History, 
-  Settings,
   PlusCircle,
   Calculator
 } from 'lucide-react';
@@ -17,9 +15,9 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Tax Calculator', href: '/calculator', icon: Calculator },
   { name: 'Chat Sessions', href: '/chat', icon: MessageCircle },
-  { name: 'Tax Submissions', href: '/submissions', icon: FileText },
+
   { name: 'History', href: '/history', icon: History },
-  { name: 'Settings', href: '/settings', icon: Settings },
+
 ];
 
 interface SidebarProps {
