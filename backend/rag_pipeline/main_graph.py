@@ -370,3 +370,46 @@ def reason_node(state: TaxState) -> dict:
             reasoning[name] = {"amount": "N/A", "summary": "Could not determine deduction.", "citations": []}
 
     return {"reasoning": reasoning}
+def summary_node(state: TaxState) -> dict:
+    """Summarize all deductions and amounts."""
+    print("--- Executing Node: Summary ---")
+    reasoning = state["reasoning"]
+    lines = []
+    for k in sorted(reasoning.keys()):
+        v = reasoning[k]
+        lines.append(f"- **{k}**: {v.get('amount', 'N/A')} ({v.get('summary', 'No summary available')})")
+    return {"summary": "\n".join(lines)}
+
+def legal_node(state: TaxState) -> dict:
+    """Summarize the legal basis (sections/cases) for deductions."""
+    print("--- Executing Node: Legal ---")
+    reasoning = state["reasoning"]
+    lines = []
+    for k in sorted(reasoning.keys()):
+        v = reasoning[k]
+        citations = v.get('citations', [])
+        if v.get('amount', 'N/A') == 'N/A' and citations:
+             lines.append(f"- **{k}**: Eligibility criteria: {', '.join(citations)}")
+        elif citations:
+            lines.append(f"- **{k}**: {', '.join(citations)}")
+        else:
+            lines.append(f"- **{k}**: No specific citations available.")
+    return {"legal_basis": "\n".join(lines)}
+
+def verdict_node(state: TaxState) -> dict:
+    """Compile final deduction verdict."""
+    print("--- Executing Node: Verdict ---")
+    summary = state["summary"]
+    legal_basis = state["legal_basis"]
+    verdict = "\n".join(
+        [
+            "## Deduction Summary",
+            summary,
+            "",
+            "## Legal Basis",
+            legal_basis,
+            "",
+            "⚖️ This summary is based on the provided facts and Indian IT laws. Please consult a tax professional for personalized advice."
+        ]
+    )
+    return {"verdict": verdict}
