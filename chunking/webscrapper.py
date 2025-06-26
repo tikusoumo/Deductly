@@ -115,7 +115,14 @@ def scrape_blog_to_pdf(url, output_dir="data", filename=None):
         print(f"❌ Error scraping blog: {str(e)}")
         return None
 
-
+# Example usage
+if __name__ == "__main__":
+    blog_url = "https://example-blog-url.com/some-article"
+    output_pdf = scrape_blog_to_pdf(blog_url)
+    if output_pdf:
+        print(f"PDF saved at: {output_pdf}")
+    else:
+        print("Failed to generate PDF.")
     
     
     
