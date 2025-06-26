@@ -131,6 +131,7 @@ class ChatService:
         Starts a new tax deduction chat session.
         Invokes LangGraph for initial analysis and uses the raw verdict as the assistant's message.
         """
+        print(input_data)
         sessions_collection = db_service.get_session_collection()
         user_id_obj = ObjectId(user_id)
         # Generate a unique session ID for LangGraph's thread_id
