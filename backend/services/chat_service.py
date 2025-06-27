@@ -131,7 +131,6 @@ class ChatService:
         Starts a new tax deduction chat session.
         Invokes LangGraph for initial analysis and uses the raw verdict as the assistant's message.
         """
-        print(input_data)
         sessions_collection = db_service.get_session_collection()
         user_id_obj = ObjectId(user_id)
         # Generate a unique session ID for LangGraph's thread_id
@@ -200,10 +199,12 @@ class ChatService:
         new_user_message = ChatMessage(role="user", content=input_data.message)
         chat_history_messages.append(new_user_message)
 
-        config = {"configurable": {"thread_id": session_id}} # Configuration for LangGraph
+        config = {"configurable": {"thread_id": session_id}} 
 
         final_state = None # Initialize final_state for clarity
-
+        bot_response_content = None
+        tool_call_id = None
+        awaiting_human_input = False
         if input_data.is_interruption_response:
             # Find the last AI message in chat history (excluding the current user's message)
             # that contained a tool_call (which would be the interruption for human assistance)
@@ -243,6 +244,7 @@ class ChatService:
                 resume_command, 
                 config
             )
+            
         else:
             # --- START OF MODIFIED CODE FOR NORMAL MESSAGES ---
             print(f"Generating chatbot response for session {session_id} using direct conversation_chain...")
@@ -267,7 +269,8 @@ class ChatService:
             awaiting_human_input = False
             tool_call_id = None 
             # --- END OF MODIFIED CODE FOR NORMAL MESSAGES ---
-
+        if bot_response_content is None:
+            bot_response_content = final_state.get("verdict", "An unexpected error occurred. Please try again.")
         # Add the bot's response to the chat history
         new_bot_message = ChatMessage(role="assistant", content=bot_response_content, tool_call_id=tool_call_id)
         chat_history_messages.append(new_bot_message)
