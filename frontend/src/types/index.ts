@@ -17,7 +17,7 @@ export interface ChatSession {
 export interface Message {
   id: string;
   content: string;
-  sender: 'user' | 'ai';
+  sender: 'user' | 'assistant';
   timestamp: string;
   type?: 'text' | 'file' | 'suggestion';
 }

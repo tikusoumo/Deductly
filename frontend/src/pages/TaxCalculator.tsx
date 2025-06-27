@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { useNavigate } from 'react-router-dom';
 import { 
   Calculator, 
   DollarSign, 
@@ -148,6 +149,7 @@ const getDeductionDescription = (section: string): string => {
 };
 
 export const TaxCalculator: React.FC = () => {
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [calculationResult, setCalculationResult] = useState<TaxCalculationResult | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
@@ -259,11 +261,18 @@ export const TaxCalculator: React.FC = () => {
       const responseData = await response.json();
       console.log('API Response:', responseData);
 
-      // Parse the response
-      const result = parseTaxResponse(responseData.initial_bot_response);
+      // Redirect to chat session page with session_id
+      if (responseData.session_id) {
+        localStorage.setItem('session_id', responseData.session_id);
+        navigate(`/chat?session_id=${responseData.session_id}`, );
+        return;
+      }
+
+      // Optionally, you can still parse and show results if session_id is not present
+      const result = parseTaxResponse(responseData.initial_bot_response || responseData.bot_response);
       setCalculationResult(result);
       setCurrentStep(6);
-      
+
     } catch (err) {
       console.error('Error in handleCalculateTax:', err);
       const errorMessage = err instanceof Error ? err.message : 'Tax calculation failed';
