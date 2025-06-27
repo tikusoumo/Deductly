@@ -6,12 +6,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Send, Bot, User, FileText, Loader2 } from "lucide-react";
 import { Message as BaseMessage } from "@/types";
+import { Badge } from "@/components/ui/badge";
 
 // Extend Message type to include optional tool_call_id
 type Message = BaseMessage & {
   tool_call_id?: string | null;
 };
-import { Badge } from "@/components/ui/badge";
 
 // Utility to convert markdown-like expressions to HTML for better formatting
 function formatContent(content: string) {
@@ -51,7 +51,6 @@ interface ChatInterfaceProps {
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   sessionId,
   chatHistory = [],
-  // onNewSession,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -69,6 +68,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         ? JSON.parse(localStorage.getItem("user") || "{}")
         : {};
       const userId = user.id || "";
+      setIsLoading(true);
       fetch(
         `http://localhost:8000/chats/${
           sessionId || localStorage.getItem("session_id")
@@ -90,11 +90,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 sender: msg.role === "assistant" ? "assistant" : "user",
                 timestamp: msg.timestamp,
                 type: "text",
-                tool_call_id: msg.tool_call_id ?? null, // <-- include this!
+                tool_call_id: msg.tool_call_id ?? null,
               }))
             );
           }
-        });
+        })
+        .catch(console.error)
+        .finally(() => setIsLoading(false));
     } else if (chatHistory.length > 0) {
       setMessages(
         chatHistory.map((msg, idx) => ({
@@ -117,12 +119,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading || !sessionId) return;
 
-    // Find the last assistant ("ai") message with a non-null tool_call_id
-    const lastAssistantMsg = [...messages]
-      .reverse()
-      .find((msg) => msg.sender === "assistant" && msg.tool_call_id);
-
-    const isInterruptionResponse = !!lastAssistantMsg;
+    // --- CORRECTED LOGIC FOR is_interruption_response ---
+    // Check if the VERY LAST message is from the assistant and has a tool_call_id.
+    const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+    const isInterruptionResponse = !!(
+      lastMessage &&
+      lastMessage.sender === 'assistant' &&
+      lastMessage.tool_call_id
+    );
+    // --- END OF CORRECTION ---
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -136,7 +141,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setInputValue("");
     setIsLoading(true);
 
-    // Get user id from localStorage (adjust if your user object is stored differently)
     const user = localStorage.getItem("user")
       ? JSON.parse(localStorage.getItem("user") || "{}")
       : {};
@@ -146,7 +150,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       message: userMessage.content,
       is_interruption_response: isInterruptionResponse,
     };
-    console.log("Sending message:", payload);
+
+    console.log("Sending message payload:", payload);
+
     fetch(`http://localhost:8000/chats/${sessionId}/send_message`, {
       method: "POST",
       headers: {
@@ -165,28 +171,31 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       })
       .then((data) => {
         if (data && data.bot_response) {
+          const newHistory = data.updated_chat_history;
+          const lastBotMessageInHistory = Array.isArray(newHistory) && newHistory.length > 0
+            ? newHistory[newHistory.length - 1]
+            : null;
+
           const aiResponse: Message = {
             id: (Date.now() + 1).toString(),
             content: data.bot_response,
             sender: "assistant",
             timestamp: new Date().toISOString(),
             type: "text",
-            ...(data.updated_chat_history &&
-              Array.isArray(data.updated_chat_history) &&
-              data.updated_chat_history.length > 0 &&
-              data.updated_chat_history[data.updated_chat_history.length - 1]
-                .tool_call_id && {
-                tool_call_id:
-                  data.updated_chat_history[
-                    data.updated_chat_history.length - 1
-                  ].tool_call_id,
-              }),
+            tool_call_id: lastBotMessageInHistory?.tool_call_id ?? null,
           };
           setMessages((prev) => [...prev, aiResponse]);
         }
       })
       .catch((err) => {
-        // Optionally show error to user
+        const errorResponse: Message = {
+          id: (Date.now() + 1).toString(),
+          content: `Error: ${err.message}`,
+          sender: 'assistant',
+          timestamp: new Date().toISOString(),
+          type: 'text',
+        };
+        setMessages((prev) => [...prev, errorResponse]);
         console.error("Send message error:", err);
       })
       .finally(() => setIsLoading(false));
@@ -205,7 +214,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-blue-600" />
           Tax Advisor Chat
-          {sessionId && <Badge variant="secondary">Session {sessionId}</Badge>}
+          {sessionId && <Badge variant="secondary">Session {sessionId.substring(0, 8)}</Badge>}
         </CardTitle>
       </CardHeader>
 
@@ -241,7 +250,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   }`}
                 >
                   <div
-                    className={`rounded-lg px-4 py-2 ${
+                    className={`rounded-lg px-4 py-2 shadow-sm ${
                       message.sender === "assistant"
                         ? "bg-white text-black"
                         : "bg-blue-600 text-white"
@@ -254,14 +263,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       }}
                     />
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1">
+                  <div className="text-xs text-muted-foreground mt-1 px-1">
                     {new Date(message.timestamp).toLocaleTimeString()}
                   </div>
                 </div>
               </div>
             ))}
 
-            {isLoading && (
+            {isLoading && messages[messages.length -1]?.sender === 'user' && (
               <div className="flex items-start gap-3">
                 <Avatar className="h-8 w-8 flex-shrink-0">
                   <AvatarFallback className="bg-blue-100 text-blue-600">
@@ -282,14 +291,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div ref={messagesEndRef} />
         </ScrollArea>
 
-        {/* Input section: fixed, not scrollable */}
         <div className="border-t p-4 bg-white sticky bottom-0">
           <div className="flex gap-2">
             <Input
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask about tax deductions, filing requirements, or get tax advice..."
+              placeholder="Ask a follow-up question..."
               className="flex-1"
               disabled={isLoading}
             />
@@ -309,6 +317,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               onClick={() =>
                 setInputValue("What deductions am I eligible for?")
               }
+              disabled={isLoading}
             >
               <FileText className="h-3 w-3 mr-1" />
               Deductions
@@ -319,6 +328,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               onClick={() =>
                 setInputValue("How can I save on taxes this year?")
               }
+              disabled={isLoading}
             >
               Tax Savings
             </Button>
@@ -326,8 +336,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               variant="outline"
               size="sm"
               onClick={() =>
-                setInputValue("Help me with home office deduction")
+                setInputValue("Explain home office deduction")
               }
+              disabled={isLoading}
             >
               Home Office
             </Button>
