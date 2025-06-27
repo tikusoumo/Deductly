@@ -720,6 +720,59 @@ def reason_node(state: TaxState) -> dict:
 
     return {"reasoning": reasoning, "messages": [AIMessage(content="Generated reasoning for eligible deductions.")]}
 
+def calculate_totals_node(state: TaxState) -> dict:
+    """Calculate total deductions, total taxable income, and tax liability."""
+    print("--- Executing Node: Calculate Totals ---")
+    user_details = state["user_details"]
+    reasoning = state["reasoning"]
+
+    calculator = TaxCalculator(user_details) # Re-instantiate calculator with user details
+
+    total_deductions = 0.0
+    for deduction_name, deduction_info in reasoning.items():
+        amount_str = deduction_info.get("amount", "N/A")
+        # Try to extract a numeric value from the amount string
+        if isinstance(amount_str, (int, float)):
+            amount = float(amount_str)
+        elif isinstance(amount_str, str):
+            # Extract numbers from string, e.g., "Up to ₹1,50,000" -> 150000
+            import re
+            numbers = re.findall(r'\d+', amount_str.replace(',', ''))
+            if numbers:
+                amount = float(numbers[0]) # Take the first number found
+            else:
+                amount = 0.0 # If no number found, consider it 0 for total
+        else:
+            amount = 0.0
+        
+        # Ensure we only add valid numeric deductions
+        if amount_str != "N/A" and amount > 0:
+            total_deductions += amount
+
+    # Calculate Total Taxable Income
+    # Assuming 'salary' is the primary income, and other_income are additions
+    # This part needs to be robust based on your TaxCalculator's capabilities
+    # You might want to have a get_gross_income method in TaxCalculator
+    # gross_income = user_details.get("salary", 0) + user_details.get("other_income", {}).get("fixed_deposit_interest", 0) + user_details.get("other_income", {}).get("interest_from_savings", 0)
+
+    # Note: If your TaxCalculator has a more comprehensive way to get gross income, use it.
+    gross_income = calculator.calculate_gross_income()
+
+    total_taxable_income = gross_income - total_deductions
+    if total_taxable_income < 0:
+        total_taxable_income = 0 # Taxable income cannot be negative
+
+    # Calculate Tax Liability
+    # This heavily depends on your TaxCalculator's implementation
+    tax_liability = calculator.calculate_tax_liability(total_taxable_income)
+
+
+    return {
+        "total_deductions": total_deductions,
+        "total_taxable_income": total_taxable_income,
+        "tax_liability": tax_liability
+    }
+
 def summary_node(state: TaxState) -> dict:
     """Summarize all deductions and amounts."""
     print("--- Executing Node: Summary ---")
@@ -766,17 +819,23 @@ def verdict_node(state: TaxState) -> dict:
     print("--- Executing Node: Verdict ---")
     summary = state["summary"]
     legal_basis = state["legal_basis"]
+    total_deductions = state.get("total_deductions", 0.0)
+    total_taxable_income = state.get("total_taxable_income", 0.0)
+    tax_liability = state.get("tax_liability", 0.0)
+
     verdict = "\n".join(
         [
-            "## Tax Deduction Assessment",
+            "## Deduction Summary",
             summary,
             "",
-            "## Legal Basis and Citations",
+            f"**Total Estimated Deductions**: ₹{total_deductions:,.2f}",
+            f"**Total Estimated Taxable Income**: ₹{total_taxable_income:,.2f}",
+            f"**Total Estimated Tax Liability**: ₹{tax_liability:,.2f}",
+            "",
+            "## Legal Basis",
             legal_basis,
             "",
-            "⚖️ This assessment is based on the provided facts and Indian Income Tax laws for FY 2024-25 (AY 2025-26). "
-            "It is for informational purposes only and does not constitute professional tax advice. "
-            "Please consult with a qualified tax professional for personalized advice."
+            "⚖️ This summary is based on the provided facts and Indian IT laws. Please consult a tax professional for personalized advice."
         ]
     )
     return {"verdict": verdict, "messages": [AIMessage(content="Final tax deduction verdict generated.")]}
@@ -796,6 +855,7 @@ def create_tax_graph(checkpointer=None):
     graph_builder.add_node("analyze_query_node", analyze_query_node)
     graph_builder.add_node("rag_node", rag_node)
     graph_builder.add_node("reason_node", reason_node)
+    graph_builder.add_node("calculate_totals_node", calculate_totals_node)
     graph_builder.add_node("summary_node", summary_node)
     graph_builder.add_node("legal_node", legal_node)
     graph_builder.add_node("verdict_node", verdict_node)
@@ -832,7 +892,8 @@ def create_tax_graph(checkpointer=None):
     graph_builder.add_edge("filter_node", "analyze_query_node")
     graph_builder.add_edge("analyze_query_node", "rag_node")
     graph_builder.add_edge("rag_node", "reason_node")
-    graph_builder.add_edge("reason_node", "summary_node")
+    graph_builder.add_edge("reason_node", "calculate_totals_node") # New edge
+    graph_builder.add_edge("calculate_totals_node", "summary_node") # New edge
     graph_builder.add_edge("summary_node", "legal_node")
     graph_builder.add_edge("legal_node", "verdict_node")
     graph_builder.add_edge("verdict_node", END)
