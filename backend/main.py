@@ -4,8 +4,6 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
-from services.chat_service import chat_service
-from rag_pipeline.main_graph import create_tax_graph
 from services.chat_service import ChatService, chat_service
 
 app = FastAPI()
