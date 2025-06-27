@@ -1,101 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// import React from 'react';
-// import { TaxInformationForm } from '@/components/forms/TaxInformationForm';
-// import { TaxFormData, TaxCalculationResult } from '@/types';
-// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-// import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-// import { AlertCircle } from 'lucide-react';
-
-// export const TaxCalculator: React.FC = () => {
-//   const [error, setError] = React.useState<string | null>(null);
-
-//   const handleCalculateTax = async (data: TaxFormData): Promise<TaxCalculationResult> => {
-//     setError(null);
-//     try {
-//       // This assumes the API endpoint is '/api/tax/submit' and returns a structured JSON
-//       // object containing the full results from the RAG pipeline.
-//       const { id } = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user') || '{}') : { id: null };
-//       const response = await fetch('http://localhost:8000/chats/start_new_tax_session', {
-//         method: 'POST',
-//         headers: {
-//           'Content-Type': 'application/json',
-//         },
-//         body: JSON.stringify(data),
-//       });
-//       console.log('Response from backend:', response);
-//       if (!response.ok) {
-//         const errorData = await response.json();
-//         throw new Error(errorData.message || 'An error occurred during tax calculation.');
-//       }
-
-//       const responseData = await response.json();
-//       const backendResult = responseData.data;
-
-//       // Transforms the backend response into the TaxCalculationResult type expected by the form.
-//       const parseAmount = (amountStr: string | number | undefined): number => {
-//         if (typeof amountStr === 'number') return amountStr;
-//         if (typeof amountStr !== 'string' || amountStr === 'N/A') return 0;
-//         const numbers = amountStr.replace(/[^0-9.]/g, '');
-//         return numbers ? parseFloat(numbers) : 0;
-//       };
-
-//       const reasoning = backendResult.reasoning || {};
-//       const breakdown: TaxCalculationResult['breakdown'] = {
-//         standard_deduction: parseAmount(reasoning.standard_deduction?.amount),
-//         section_80C: parseAmount(reasoning.section_80C_deduction?.amount),
-//         section_80CCD1B: parseAmount(reasoning.section_80CCD1B_deduction?.amount),
-//         section_80D: parseAmount(reasoning.section_80D_deduction?.amount),
-//         section_80G: parseAmount(reasoning.section_80G_deduction?.amount),
-//         section_80E: parseAmount(reasoning.section_80E_deduction?.amount),
-//         section_24: parseAmount(reasoning.section_24B_deduction?.amount),
-//         section_80DD: parseAmount(reasoning.section_80DD_deduction?.amount),
-//         section_80TTA: parseAmount(reasoning.section_80TTA_deduction?.amount),
-//         section_80TTB: parseAmount(reasoning.section_80TTB_deduction?.amount),
-//       };
-
-//       // Assumes the backend calculates and provides estimated_savings.
-//       const estimatedSavings = backendResult.estimated_savings || 0;
-
-//       const resultForFrontend: TaxCalculationResult = {
-//         total_tax_liability: backendResult.tax_liability || 0,
-//         total_deductions: backendResult.total_deductions || 0,
-//         taxable_income: backendResult.total_taxable_income || 0,
-//         estimated_savings: estimatedSavings,
-//         breakdown: breakdown,
-//       };
-
-//       return resultForFrontend;
-
-//     } catch (err) {
-//       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-//       setError(errorMessage);
-//       throw new Error(errorMessage); // Re-throw for the form's internal error handling
-//     }
-//   };
-
-//   return (
-//     <div className="space-y-6">
-//       <Card>
-//         <CardHeader>
-//           <CardTitle className="text-2xl">Tax Calculator</CardTitle>
-//           <CardDescription>
-//             Fill in your financial details to calculate your tax liability and discover potential savings.
-//           </CardDescription>
-//         </CardHeader>
-//         <CardContent>
-//           {error && (
-//             <Alert variant="destructive" className="mb-4">
-//               <AlertCircle className="h-4 w-4" />
-//               <AlertTitle>Calculation Failed</AlertTitle>
-//               <AlertDescription>{error}</AlertDescription>
-//             </Alert>
-//           )}
-//           <TaxInformationForm onSubmit={handleCalculateTax} />
-//         </CardContent>
-//       </Card>
-//     </div>
-//   );
-// }
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -124,7 +27,6 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Link } from 'react-router-dom';
 
-// Define types directly in the component file
 type TaxFormData = {
   salary: number;
   user_age: number;
@@ -157,6 +59,7 @@ type TaxCalculationResult = {
   taxable_income: number;
   estimated_savings: number;
   breakdown: Record<string, number>;
+  rawResponse?: string;
 };
 
 const taxFormSchema = z.object({
@@ -184,6 +87,65 @@ const taxFormSchema = z.object({
     fixed_deposit_interest: z.number().min(0)
   })
 });
+
+const parseTaxResponse = (response: string): TaxCalculationResult => {
+  const deductions: Record<string, number> = {};
+  let totalDeductions = 0;
+  let taxableIncome = 0;
+  let taxLiability = 0;
+
+  // Extract deductions
+  const deductionRegex = /- \*\*(.+?)\*\*: ₹([\d,]+)/g;
+  let deductionMatch;
+  while ((deductionMatch = deductionRegex.exec(response))) {
+    const section = deductionMatch[1];
+    const amount = parseFloat(deductionMatch[2].replace(/,/g, ''));
+    deductions[section] = amount;
+    totalDeductions += amount;
+  }
+
+  // Extract totals
+  const totalsRegex = /\*\*Total Estimated Deductions\*\*: ₹([\d,]+)\n\*\*Total Estimated Taxable Income\*\*: ₹([\d,]+)\n\*\*Total Estimated Tax Liability\*\*: ₹([\d,]+)/;
+  const totalsMatch = response.match(totalsRegex);
+  if (totalsMatch) {
+    totalDeductions = parseFloat(totalsMatch[1].replace(/,/g, ''));
+    taxableIncome = parseFloat(totalsMatch[2].replace(/,/g, ''));
+    taxLiability = parseFloat(totalsMatch[3].replace(/,/g, ''));
+  }
+
+  return {
+    total_tax_liability: taxLiability,
+    total_deductions: totalDeductions,
+    taxable_income: taxableIncome,
+    estimated_savings: totalDeductions,
+    breakdown: deductions,
+    rawResponse: response
+  };
+};
+
+const formatSectionName = (section: string): string => {
+  return section
+    .replace(/_/g, ' ')
+    .replace(/section/g, 'Section ')
+    .replace(/(^|\s)\w/g, match => match.toUpperCase());
+};
+
+const getDeductionDescription = (section: string): string => {
+  const descriptions: Record<string, string> = {
+    standard_deduction: 'Standard deduction for salaried individuals',
+    section_24B_deduction: 'Interest on home loan for self-occupied property',
+    section_80C_deduction: 'Investments in PPF, ELSS, Life Insurance, etc.',
+    section_80CCD1B_deduction: 'Additional NPS contribution (Tier 1 account)',
+    section_80D_deduction: 'Health insurance premium for self/family/parents',
+    section_80G_deduction: 'Eligible donations to charitable institutions',
+    section_80E_deduction: 'Interest on education loan for higher studies',
+    section_80DD_deduction: 'Medical treatment of disabled dependent',
+    section_80TTA_deduction: 'Interest from savings accounts',
+    section_80TTB_deduction: 'Interest income for senior citizens'
+  };
+  
+  return descriptions[section] || 'Tax deduction under this section';
+};
 
 export const TaxCalculator: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -224,7 +186,6 @@ export const TaxCalculator: React.FC = () => {
   const totalSteps = 5;
   const progress = (currentStep / totalSteps) * 100;
 
-  // Auto-calculate senior citizen status based on age
   React.useEffect(() => {
     const age = watchedValues.user_age;
     if (age >= 60) {
@@ -234,21 +195,20 @@ export const TaxCalculator: React.FC = () => {
     }
   }, [watchedValues.user_age, setValue]);
 
-const handleCalculateTax = async (data: TaxFormData) => {
+  const handleCalculateTax = async (data: TaxFormData) => {
+    console.log('Form submitted with data:', data);
     setIsCalculating(true);
     setError(null);
     
     try {
-      // Get user ID from localStorage
       const user = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user') || '{}') : {};
       const userId = user.id || '';
       
-      // Validate we have a user ID
       if (!userId) {
         throw new Error('User ID is required for tax calculation');
       }
 
-      // Prepare the request payload with user_details wrapper
+      // Prepare the request payload
       const requestPayload = {
         user_details: {
           salary: data.salary,
@@ -277,7 +237,7 @@ const handleCalculateTax = async (data: TaxFormData) => {
         }
       };
 
-      console.log('Sending payload:', requestPayload); // Debug log
+      console.log('Sending payload:', requestPayload);
 
       const response = await fetch('http://localhost:8000/chats/start_new_tax_session', {
         method: 'POST',
@@ -288,54 +248,26 @@ const handleCalculateTax = async (data: TaxFormData) => {
         body: JSON.stringify(requestPayload),
       });
 
+      console.log('Response status:', response.status);
+
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('API Error Response:', errorData); // Debug log
+        console.error('API Error Response:', errorData);
         throw new Error(errorData.message || 'Tax calculation failed');
       }
 
       const responseData = await response.json();
-      console.log('API Response:', responseData); // Debug log
+      console.log('API Response:', responseData);
 
-      // Extract the backend result - adjust this based on actual response structure
-      const backendResult = responseData.user_details || responseData.data || {};
-      console.log('Backend result:', backendResult);
-
-      const parseAmount = (amountStr: string | number | undefined): number => {
-        if (typeof amountStr === 'number') return amountStr;
-        if (typeof amountStr !== 'string' || amountStr === 'N/A') return 0;
-        const numbers = amountStr.replace(/[^0-9.]/g, '');
-        return numbers ? parseFloat(numbers) : 0;
-      };
-
-      const reasoning = backendResult.reasoning || {};
-      const breakdown = {
-        standard_deduction: parseAmount(reasoning.standard_deduction?.amount),
-        section_80C: parseAmount(reasoning.section_80C_deduction?.amount),
-        section_80CCD1B: parseAmount(reasoning.section_80CCD1B_deduction?.amount),
-        section_80D: parseAmount(reasoning.section_80D_deduction?.amount),
-        section_80G: parseAmount(reasoning.section_80G_deduction?.amount),
-        section_80E: parseAmount(reasoning.section_80E_deduction?.amount),
-        section_24: parseAmount(reasoning.section_24B_deduction?.amount),
-        section_80DD: parseAmount(reasoning.section_80DD_deduction?.amount),
-        section_80TTA: parseAmount(reasoning.section_80TTA_deduction?.amount),
-        section_80TTB: parseAmount(reasoning.section_80TTB_deduction?.amount),
-      };
-
-      const result: TaxCalculationResult = {
-        total_tax_liability: backendResult.tax_liability || 0,
-        total_deductions: backendResult.total_deductions || 0,
-        taxable_income: backendResult.total_taxable_income || 0,
-        estimated_savings: backendResult.estimated_savings || 0,
-        breakdown
-      };
-
+      // Parse the response
+      const result = parseTaxResponse(responseData.initial_bot_response);
       setCalculationResult(result);
       setCurrentStep(6);
+      
     } catch (err) {
+      console.error('Error in handleCalculateTax:', err);
       const errorMessage = err instanceof Error ? err.message : 'Tax calculation failed';
       setError(errorMessage);
-      console.error('Tax calculation error:', err);
     } finally {
       setIsCalculating(false);
     }
@@ -474,228 +406,227 @@ const handleCalculateTax = async (data: TaxFormData) => {
           </Card>
         );
 
-      // ... (other steps remain the same as in your original code)
       case 3:
-              return (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Heart className="h-5 w-5 text-red-600" />
-                      Health & Medical
-                    </CardTitle>
-                    <CardDescription>
-                      Health insurance and medical expense details
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="health_insurance_premium">Health Insurance Premium (₹)</Label>
-                        <Input
-                          id="health_insurance_premium"
-                          type="number"
-                          placeholder="e.g., 18000"
-                          {...register('health_insurance_premium', { valueAsNumber: true })}
-                        />
-                        <p className="text-xs text-gray-500">For self, spouse, and children</p>
-                      </div>
-      
-                      <div className="space-y-2">
-                        <Label htmlFor="parents_health_insurance_premium">Parents' Health Insurance (₹)</Label>
-                        <Input
-                          id="parents_health_insurance_premium"
-                          type="number"
-                          placeholder="e.g., 30000"
-                          {...register('parents_health_insurance_premium', { valueAsNumber: true })}
-                        />
-                      </div>
-      
-                      <div className="space-y-2">
-                        <Label htmlFor="medical_expenses">Medical Expenses (₹)</Label>
-                        <Input
-                          id="medical_expenses"
-                          type="number"
-                          placeholder="e.g., 6000"
-                          {...register('medical_expenses', { valueAsNumber: true })}
-                        />
-                        <p className="text-xs text-gray-500">
-                          {watchedValues.is_senior_citizen 
-                            ? 'General medical expenses' 
-                            : 'Preventive health checkup expenses'
-                          }
-                        </p>
-                      </div>
-      
-                      <div className="space-y-2">
-                        <Label htmlFor="parents_age">Parents' Age</Label>
-                        <Input
-                          id="parents_age"
-                          type="number"
-                          placeholder="e.g., 70"
-                          {...register('parents_age', { valueAsNumber: true })}
-                        />
-                        <p className="text-xs text-gray-500">For determining senior citizen benefits</p>
-                      </div>
-                    </div>
-      
-                    <div className="space-y-4">
-                      <h4 className="font-medium">Disability Details</h4>
-                      <div className="flex items-center justify-between p-4 border rounded-lg">
-                        <div>
-                          <Label htmlFor="is_disabled">Dependent with Disability</Label>
-                          <p className="text-sm text-gray-600">Section 80DD deduction</p>
-                        </div>
-                        <Switch
-                          id="is_disabled"
-                          {...register('disability_details.is_disabled')}
-                        />
-                      </div>
-      
-                      {watchedValues.disability_details?.is_disabled && (
-                        <div className="space-y-2">
-                          <Label htmlFor="disability_type">Disability Type</Label>
-                          <Select 
-                            value={watchedValues.disability_details.type}
-                            onValueChange={(value) => setValue('disability_details.type', value as 'normal_disability' | 'severe_disability')}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select disability type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="normal_disability">Normal Disability (40-80%)</SelectItem>
-                              <SelectItem value="severe_disability">Severe Disability (80%+)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-      
-            case 4:
-              return (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Home className="h-5 w-5 text-orange-600" />
-                      Loans & Donations
-                    </CardTitle>
-                    <CardDescription>
-                      Housing loan, education loan, and donation details
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="housing_loan_interest">Housing Loan Interest (₹)</Label>
-                        <Input
-                          id="housing_loan_interest"
-                          type="number"
-                          placeholder="e.g., 250000"
-                          {...register('housing_loan_interest', { valueAsNumber: true })}
-                        />
-                      </div>
-      
-                      <div className="space-y-2">
-                        <Label htmlFor="property_status">Property Status</Label>
-                        <Select 
-                          value={watchedValues.property_status}
-                          onValueChange={(value) => setValue('property_status', value as 'self_occupied' | 'let_out' | 'deemed_let_out')}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="self_occupied">Self Occupied</SelectItem>
-                            <SelectItem value="let_out">Let Out</SelectItem>
-                            <SelectItem value="deemed_let_out">Deemed Let Out</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-      
-                      <div className="space-y-2">
-                        <Label htmlFor="education_loan_interest">Education Loan Interest (₹)</Label>
-                        <Input
-                          id="education_loan_interest"
-                          type="number"
-                          placeholder="e.g., 45000"
-                          {...register('education_loan_interest', { valueAsNumber: true })}
-                        />
-                        <p className="text-xs text-gray-500">Section 80E - No upper limit</p>
-                      </div>
-      
-                      <div className="space-y-2">
-                        <Label htmlFor="donation_amount">Donations (₹)</Label>
-                        <Input
-                          id="donation_amount"
-                          type="number"
-                          placeholder="e.g., 5000"
-                          {...register('donation_amount', { valueAsNumber: true })}
-                        />
-                        <p className="text-xs text-gray-500">Section 80G eligible donations</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-      
-            case 5:
-              return (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-purple-600" />
-                      Other Income
-                    </CardTitle>
-                    <CardDescription>
-                      Interest income from savings and fixed deposits
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="interest_from_savings">Savings Account Interest (₹)</Label>
-                        <Input
-                          id="interest_from_savings"
-                          type="number"
-                          placeholder="e.g., 8000"
-                          {...register('other_income.interest_from_savings', { valueAsNumber: true })}
-                        />
-                        <p className="text-xs text-gray-500">
-                          Section 80TTA - Up to ₹10,000 for regular taxpayers
-                        </p>
-                      </div>
-      
-                      <div className="space-y-2">
-                        <Label htmlFor="fixed_deposit_interest">Fixed Deposit Interest (₹)</Label>
-                        <Input
-                          id="fixed_deposit_interest"
-                          type="number"
-                          placeholder="e.g., 30000"
-                          {...register('other_income.fixed_deposit_interest', { valueAsNumber: true })}
-                        />
-                        <p className="text-xs text-gray-500">
-                          {watchedValues.is_senior_citizen 
-                            ? 'Section 80TTB - Up to ₹50,000 for senior citizens'
-                            : 'Taxable income for regular taxpayers'
-                          }
-                        </p>
-                      </div>
-                    </div>
-      
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        {watchedValues.is_senior_citizen
-                          ? 'As a senior citizen, you can claim deduction under Section 80TTB for interest income up to ₹50,000.'
-                          : 'You can claim deduction under Section 80TTA for savings account interest up to ₹10,000.'
-                        }
-                      </AlertDescription>
-                    </Alert>
-                  </CardContent>
-                </Card>
-              );
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Heart className="h-5 w-5 text-red-600" />
+                Health & Medical
+              </CardTitle>
+              <CardDescription>
+                Health insurance and medical expense details
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="health_insurance_premium">Health Insurance Premium (₹)</Label>
+                  <Input
+                    id="health_insurance_premium"
+                    type="number"
+                    placeholder="e.g., 18000"
+                    {...register('health_insurance_premium', { valueAsNumber: true })}
+                  />
+                  <p className="text-xs text-gray-500">For self, spouse, and children</p>
+                </div>
+  
+                <div className="space-y-2">
+                  <Label htmlFor="parents_health_insurance_premium">Parents' Health Insurance (₹)</Label>
+                  <Input
+                    id="parents_health_insurance_premium"
+                    type="number"
+                    placeholder="e.g., 30000"
+                    {...register('parents_health_insurance_premium', { valueAsNumber: true })}
+                  />
+                </div>
+  
+                <div className="space-y-2">
+                  <Label htmlFor="medical_expenses">Medical Expenses (₹)</Label>
+                  <Input
+                    id="medical_expenses"
+                    type="number"
+                    placeholder="e.g., 6000"
+                    {...register('medical_expenses', { valueAsNumber: true })}
+                  />
+                  <p className="text-xs text-gray-500">
+                    {watchedValues.is_senior_citizen 
+                      ? 'General medical expenses' 
+                      : 'Preventive health checkup expenses'
+                    }
+                  </p>
+                </div>
+  
+                <div className="space-y-2">
+                  <Label htmlFor="parents_age">Parents' Age</Label>
+                  <Input
+                    id="parents_age"
+                    type="number"
+                    placeholder="e.g., 70"
+                    {...register('parents_age', { valueAsNumber: true })}
+                  />
+                  <p className="text-xs text-gray-500">For determining senior citizen benefits</p>
+                </div>
+              </div>
+  
+              <div className="space-y-4">
+                <h4 className="font-medium">Disability Details</h4>
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <Label htmlFor="is_disabled">Dependent with Disability</Label>
+                    <p className="text-sm text-gray-600">Section 80DD deduction</p>
+                  </div>
+                  <Switch
+                    id="is_disabled"
+                    {...register('disability_details.is_disabled')}
+                  />
+                </div>
+  
+                {watchedValues.disability_details?.is_disabled && (
+                  <div className="space-y-2">
+                    <Label htmlFor="disability_type">Disability Type</Label>
+                    <Select 
+                      value={watchedValues.disability_details.type}
+                      onValueChange={(value) => setValue('disability_details.type', value as 'normal_disability' | 'severe_disability')}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select disability type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="normal_disability">Normal Disability (40-80%)</SelectItem>
+                        <SelectItem value="severe_disability">Severe Disability (80%+)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        );
+  
+      case 4:
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Home className="h-5 w-5 text-orange-600" />
+                Loans & Donations
+              </CardTitle>
+              <CardDescription>
+                Housing loan, education loan, and donation details
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="housing_loan_interest">Housing Loan Interest (₹)</Label>
+                  <Input
+                    id="housing_loan_interest"
+                    type="number"
+                    placeholder="e.g., 250000"
+                    {...register('housing_loan_interest', { valueAsNumber: true })}
+                  />
+                </div>
+  
+                <div className="space-y-2">
+                  <Label htmlFor="property_status">Property Status</Label>
+                  <Select 
+                    value={watchedValues.property_status}
+                    onValueChange={(value) => setValue('property_status', value as 'self_occupied' | 'let_out' | 'deemed_let_out')}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="self_occupied">Self Occupied</SelectItem>
+                      <SelectItem value="let_out">Let Out</SelectItem>
+                      <SelectItem value="deemed_let_out">Deemed Let Out</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+  
+                <div className="space-y-2">
+                  <Label htmlFor="education_loan_interest">Education Loan Interest (₹)</Label>
+                  <Input
+                    id="education_loan_interest"
+                    type="number"
+                    placeholder="e.g., 45000"
+                    {...register('education_loan_interest', { valueAsNumber: true })}
+                  />
+                  <p className="text-xs text-gray-500">Section 80E - No upper limit</p>
+                </div>
+  
+                <div className="space-y-2">
+                  <Label htmlFor="donation_amount">Donations (₹)</Label>
+                  <Input
+                    id="donation_amount"
+                    type="number"
+                    placeholder="e.g., 5000"
+                    {...register('donation_amount', { valueAsNumber: true })}
+                  />
+                  <p className="text-xs text-gray-500">Section 80G eligible donations</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+  
+      case 5:
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-purple-600" />
+                Other Income
+              </CardTitle>
+              <CardDescription>
+                Interest income from savings and fixed deposits
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="interest_from_savings">Savings Account Interest (₹)</Label>
+                  <Input
+                    id="interest_from_savings"
+                    type="number"
+                    placeholder="e.g., 8000"
+                    {...register('other_income.interest_from_savings', { valueAsNumber: true })}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Section 80TTA - Up to ₹10,000 for regular taxpayers
+                  </p>
+                </div>
+  
+                <div className="space-y-2">
+                  <Label htmlFor="fixed_deposit_interest">Fixed Deposit Interest (₹)</Label>
+                  <Input
+                    id="fixed_deposit_interest"
+                    type="number"
+                    placeholder="e.g., 30000"
+                    {...register('other_income.fixed_deposit_interest', { valueAsNumber: true })}
+                  />
+                  <p className="text-xs text-gray-500">
+                    {watchedValues.is_senior_citizen 
+                      ? 'Section 80TTB - Up to ₹50,000 for senior citizens'
+                      : 'Taxable income for regular taxpayers'
+                    }
+                  </p>
+                </div>
+              </div>
+  
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  {watchedValues.is_senior_citizen
+                    ? 'As a senior citizen, you can claim deduction under Section 80TTB for interest income up to ₹50,000.'
+                    : 'You can claim deduction under Section 80TTA for savings account interest up to ₹10,000.'
+                  }
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        );
 
       case 6:
         return calculationResult ? (
@@ -710,60 +641,90 @@ const handleCalculateTax = async (data: TaxFormData) => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <h4 className="font-medium text-blue-800">Taxable Income</h4>
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                  <h4 className="font-medium text-blue-800 mb-2">Total Deductions</h4>
                   <p className="text-2xl font-bold text-blue-600">
-                    ₹{calculationResult.taxable_income.toLocaleString()}
-                  </p>
-                </div>
-                
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <h4 className="font-medium text-green-800">Total Deductions</h4>
-                  <p className="text-2xl font-bold text-green-600">
                     ₹{calculationResult.total_deductions.toLocaleString()}
                   </p>
                 </div>
                 
-                <div className="p-4 bg-orange-50 rounded-lg">
-                  <h4 className="font-medium text-orange-800">Tax Liability</h4>
+                <div className="p-4 bg-green-50 rounded-lg border border-green-100">
+                  <h4 className="font-medium text-green-800 mb极简 2">Taxable Income</h4>
+                  <p className="text-2xl font-bold text-green-600">
+                    ₹{calculationResult.taxable_income.toLocaleString()}
+                  </p>
+                </div>
+                
+                <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
+                  <h4 className="font-medium text-orange-800 mb-2">Tax Liability</h4>
                   <p className="text-2xl font-bold text-orange-600">
                     ₹{calculationResult.total_tax_liability.toLocaleString()}
                   </p>
                 </div>
-                
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <h4 className="font-medium text-purple-800">Estimated Savings</h4>
-                  <p className="text-2xl font-bold text-purple-600">
-                    ₹{calculationResult.estimated_savings.toLocaleString()}
-                  </p>
-                </div>
               </div>
 
+              {/* Deduction Details */}
               <div className="space-y-4">
-                <h4 className="font-medium">Deduction Breakdown</h4>
-                <div className="space-y-2">
-                  {Object.entries(calculationResult.breakdown).map(([section, amount]) => (
-                    <div key={section} className="flex justify-between items-center p-3 border rounded">
-                      <span className="font-medium">{section.replace(/_/g, ' ').replace('section', 'Section').toUpperCase()}</span>
-                      <span className="text-green-600 font-medium">₹{amount.toLocaleString()}</span>
-                    </div>
-                  ))}
+                <h3 className="font-semibold text-lg">Deduction Details</h3>
+                <div className="space-y-3">
+                  {Object.entries(calculationResult.breakdown)
+                    .filter(([_, amount]) => amount > 0)
+                    .map(([section, amount]) => (
+                      <div key={section} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-medium">
+                              {formatSectionName(section)}
+                            </h4>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {getDeductionDescription(section)}
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="bg-green-50 text-green-700 px-3 py-1">
+                            ₹{amount.toLocaleString()}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
                 </div>
               </div>
 
+              {/* Additional Information */}
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h4 className="font-medium mb-2">Important Notes</h4>
+                <ul className="space-y-2 text-sm text-gray-600 list-disc pl-5">
+                  <li>This calculation is based on the old tax regime</li>
+                  <li>Standard deduction of ₹50,000 is included</li>
+                  <li>Consult a tax professional for personalized advice</li>
+                  <li>Tax laws are subject to change</li>
+                </ul>
+              </div>
+
+              {/* Chat CTA */}
               <div className="mt-6 text-center">
-                <p className="mb-2 text-gray-700">Have more questions or need further clarification?</p>
+                <p className="mb-2 text-gray-700">Have questions about your deductions?</p>
                 <Link to="/chat">
-                  <Button variant="outline">
+                  <Button>
                     <MessageSquare className="mr-2 h-4 w-4" />
-                    Go to Chat
+                    Chat with Tax Advisor
                   </Button>
                 </Link>
               </div>
             </CardContent>
           </Card>
-        ) : null;
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Calculation Results</CardTitle>
+            </CardHeader>
+            <CardContent className="text-center py-8">
+              <Loader2 className="mx-auto h-8 w-8 animate-spin text-gray-400 mb-4" />
+              <p>Processing your tax calculation...</p>
+            </CardContent>
+          </Card>
+        );
 
       default:
         return null;
@@ -828,7 +789,10 @@ const handleCalculateTax = async (data: TaxFormData) => {
                   )}
                   
                   {currentStep === totalSteps && (
-                    <Button type="submit" disabled={isCalculating}>
+                    <Button 
+                      type="submit" 
+                      disabled={isCalculating}
+                    >
                       {isCalculating ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
