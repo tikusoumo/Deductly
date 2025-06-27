@@ -750,27 +750,29 @@ def calculate_totals_node(state: TaxState) -> dict:
             total_deductions += amount
 
     # Calculate Total Taxable Income
-    # Assuming 'salary' is the primary income, and other_income are additions
-    # This part needs to be robust based on your TaxCalculator's capabilities
-    # You might want to have a get_gross_income method in TaxCalculator
-    # gross_income = user_details.get("salary", 0) + user_details.get("other_income", {}).get("fixed_deposit_interest", 0) + user_details.get("other_income", {}).get("interest_from_savings", 0)
-
-    # Note: If your TaxCalculator has a more comprehensive way to get gross income, use it.
     gross_income = calculator.calculate_gross_income()
-
     total_taxable_income = gross_income - total_deductions
     if total_taxable_income < 0:
         total_taxable_income = 0 # Taxable income cannot be negative
 
     # Calculate Tax Liability
-    # This heavily depends on your TaxCalculator's implementation
     tax_liability = calculator.calculate_tax_liability(total_taxable_income)
 
-
+    # Return in the same format as other nodes
     return {
         "total_deductions": total_deductions,
         "total_taxable_income": total_taxable_income,
-        "tax_liability": tax_liability
+        "tax_liability": tax_liability,
+        "messages": [
+            AIMessage(
+                content=(
+                    f"Calculated totals:\n"
+                    f"- Total Deductions: ₹{total_deductions:,.2f}\n"
+                    f"- Taxable Income: ₹{total_taxable_income:,.2f}\n"
+                    f"- Tax Liability: ₹{tax_liability:,.2f}"
+                )
+            )
+        ]
     }
 
 def summary_node(state: TaxState) -> dict:
@@ -827,11 +829,11 @@ def verdict_node(state: TaxState) -> dict:
         [
             "## Deduction Summary",
             summary,
-            "",
-            f"**Total Estimated Deductions**: ₹{total_deductions:,.2f}",
-            f"**Total Estimated Taxable Income**: ₹{total_taxable_income:,.2f}",
-            f"**Total Estimated Tax Liability**: ₹{tax_liability:,.2f}",
-            "",
+            # "",
+            # f"**Total Estimated Deductions**: ₹{total_deductions:,.2f}",
+            # f"**Total Estimated Taxable Income**: ₹{total_taxable_income:,.2f}",
+            # f"**Total Estimated Tax Liability**: ₹{tax_liability:,.2f}",
+            # "",
             "## Legal Basis",
             legal_basis,
             "",

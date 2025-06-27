@@ -87,7 +87,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               data.chat_history.map((msg: any, idx: number) => ({
                 id: idx.toString(),
                 content: msg.content,
-                sender: msg.role === "assistant" ? "ai" : "user",
+                sender: msg.role === "assistant" ? "assistant" : "user",
                 timestamp: msg.timestamp,
                 type: "text",
                 tool_call_id: msg.tool_call_id ?? null, // <-- include this!
@@ -117,13 +117,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading || !sessionId) return;
 
-    // Find the last assistant message with a tool_call_id
+    // Find the last assistant ("ai") message with a non-null tool_call_id
     const lastAssistantMsg = [...messages]
       .reverse()
       .find((msg) => msg.sender === "assistant" && msg.tool_call_id);
 
-    // If the last assistant message has a tool_call_id, set is_interruption_response = true
-    let isInterruptionResponse = !!lastAssistantMsg;
+    const isInterruptionResponse = !!lastAssistantMsg;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -169,7 +168,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           const aiResponse: Message = {
             id: (Date.now() + 1).toString(),
             content: data.bot_response,
-            sender: "ai",
+            sender: "assistant",
             timestamp: new Date().toISOString(),
             type: "text",
             ...(data.updated_chat_history &&
