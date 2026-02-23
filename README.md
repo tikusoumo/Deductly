@@ -2,9 +2,8 @@
 > **Deductly** (branded as **TaxSaver AI** in the UI) is a full-stack, RAG-powered tax guidance platform built specifically for Indian individual taxpayers. It combines a multi-collection Qdrant vector database — seeded with the Income Tax Act, Income Tax Rules 1962, CBDT notifications, capital-gain case laws, and ITR forms — with a LangGraph agentic pipeline that interactively collects missing information from the user, retrieves the most relevant legal context, runs deterministic calculations, and delivers a structured, citation-backed tax deduction report.
 
 ---
+https://github.com/user-attachments/assets/4af7d4b5-6666-4bea-89fe-1d126205aa47
 
-
-https://github.com/user-attachments/assets/5ab25f5f-fc68-4f44-9040-0c2df1676b22
 
 
 ## Table of Contents
@@ -581,3 +580,4 @@ The metadata tags (`section`, `rule`, `jurisdiction`) are critical — the RAG n
 
 
 MIT © Deductly Team
+
